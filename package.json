@@ -1,0 +1,32 @@
+{
+  "name": "fangzi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "方子：覆盖生活、工作、合规场景的单点工具集合 PWA，一个工具解决一个具体痛点",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "node --import tsx --test test/*.test.ts",
+    "new:tool": "node scripts/new-tool.mjs",
+    "verify:tools": "node --import tsx scripts/verify-tools.mjs",
+    "type-check": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "pinia": "3.0.4",
+    "vue": "3.5.44",
+    "vue-router": "5.4.0",
+    "workbox-window": "7.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@vitejs/plugin-vue": "6.0.10",
+    "tsx": "4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "8.3.4",
+    "vite-plugin-pwa": "2.0.0",
+    "vue-tsc": "3.3.13",
+    "workbox-build": "7.4.1"
+  }
+}

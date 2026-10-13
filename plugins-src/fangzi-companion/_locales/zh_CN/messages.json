@@ -1,0 +1,14 @@
+{
+  "appName": {
+    "message": "方子助手"
+  },
+  "appDesc": {
+    "message": "在任意网页划词右键，直接把问题发给方子，搜索对症的小工具。"
+  },
+  "menuSearch": {
+    "message": "用方子搜索“%s”"
+  },
+  "menuAi": {
+    "message": "方子 AI 解读“%s”（高级）"
+  }
+}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>方子助手</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icons/icon48.png" alt="" width="28" height="28" />
+      <h1>方子助手</h1>
+    </header>
+
+    <label class="field">
+      方子站点地址
+      <input id="siteUrl" type="text" placeholder="如 https://fangzi.example.com" />
+    </label>
+
+    <label class="field">
+      高级版授权码（可选）
+      <input id="licenseKey" type="text" placeholder="购买 AI 解读后获得" />
+    </label>
+
+    <div class="row">
+      <button id="save" class="primary">保存</button>
+      <button id="open">打开方子</button>
+    </div>
+
+    <p id="status" class="status"></p>
+    <p class="tip">保存后，在任意网页选中文字，右键即可“用方子搜索”。AI 解读为高级功能。</p>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
