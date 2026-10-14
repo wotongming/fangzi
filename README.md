@@ -273,13 +273,3 @@ fangzi/
 ## 许可证
 
 项目源码可按自身需要选择开源协议发布；当前依赖均为商业友好许可证。
-
----
-
-## 迭代项目存档（pipeline 流水线产物）
-
-每次 pipeline 迭代的独立交付目录归档在仓库根目录，命名 `{yyyy-MM-dd}-{功能英文简写}`，内含完整项目代码与 `docs/`（使用指导书、技术沉淀、阶段文档、界面截图）。同步沉淀的通用模块见 `reusable-module/`。
-
-| 目录 | 功能 | 日期 | 技术栈 | 相关文档 |
-|---|---|---|---|---|
-| `2026-10-14-household-finance/` | 家庭财务管家（记账/预算/报表/洞察，IndexedDB 本地存储，Freemium ¥29.90/月） | 2026-10-14 | Vue3 + TS + 原生 SVG 图表 + IndexedDB | `docs/guide_014_家庭财务管家.md`、`docs/postmortem_014_家庭财务管家.md`；已集成进 fangzi：`src/tools/household-finance/` |
