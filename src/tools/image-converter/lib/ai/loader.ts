@@ -1,14 +1,17 @@
 /**
- * AI 运行环境探测与运行时加载。
- * - WebGPU：Chrome/Edge 桌面与 Android（onnxruntime-web/webgpu）
- * - WASM：全浏览器兜底（onnxruntime-web 默认）
- * 依据 onnxruntime.ai 官方兼容矩阵：WebGPU 不支持 Safari/Firefox，WASM 全支持。
+ * AI 运行时：WASM（CPU）单后端推理。
+ * 选型说明：EdgeOne Pages 静态托管对单个部署文件有 25MiB 硬上限，而
+ * onnxruntime-web 主入口（ort.bundle）与 WebGPU EP（jsep.wasm ≈27MiB）单文件必然超限；
+ * 因此使用 WASM-only 子入口 `onnxruntime-web/wasm`（ort.wasm.bundle）：
+ *   ① 只注册 wasm EP，运行时不会加载 jsep/asyncify（主入口会在初始化时无条件 import jsep 引导）；
+ *   ② wasm 自托管单文件 ≈13.6MiB < 25MiB，部署合规；
+ *   ③ 全浏览器可用（Safari/Firefox 无 WebGPU 也能推理）。
  * wasm 二进制自托管于应用 public/onnx/（与 JS 包同版本 onnxruntime-web 1.30.0），
  * 避免依赖境外 CDN（国内访问不稳定、部分网络被阻断），并可通过 SW 缓存实现二次离线。
  */
 import type { AiModelMeta } from './models'
 
-export type Runtime = 'webgpu' | 'wasm'
+export type Runtime = 'wasm'
 
 /** onnxruntime-web 版本必须与 public/onnx/ 下的 wasm 一致，否则会因内部符号不匹配而初始化失败 */
 export const ORT_VERSION = '1.30.0'
@@ -16,33 +19,19 @@ export const ORT_VERSION = '1.30.0'
 const baseUrl = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/'
 export const ORT_WASM_PATHS = `${baseUrl}onnx/`
 
-let cachedRuntime: Runtime | null = null
+export const RUNTIME: Runtime = 'wasm'
 
 export async function detectRuntime(): Promise<Runtime> {
-  if (cachedRuntime) return cachedRuntime
-  try {
-    const gpu = (navigator as unknown as { gpu?: { requestAdapter?: () => Promise<unknown> } }).gpu
-    if (gpu?.requestAdapter) {
-      const adapter = await gpu.requestAdapter()
-      if (adapter) {
-        cachedRuntime = 'webgpu'
-        return cachedRuntime
-      }
-    }
-  } catch {
-    // 无 GPU / 被浏览器策略拦截 → 走 WASM
-  }
-  cachedRuntime = 'wasm'
-  return cachedRuntime
+  return RUNTIME
 }
 
-export function runtimeLabel(r: Runtime): string {
-  return r === 'webgpu' ? 'WebGPU 加速' : 'WASM（CPU）'
+export function runtimeLabel(_r: Runtime): string {
+  return 'WASM（CPU）'
 }
 
-/** 动态加载 onnxruntime-web；调用方须保证只在浏览器环境执行 */
-export async function loadOrt(runtime: Runtime): Promise<typeof import('onnxruntime-web')> {
-  const ort = await import(runtime === 'webgpu' ? 'onnxruntime-web/webgpu' : 'onnxruntime-web')
+/** 动态加载 onnxruntime-web WASM-only 入口；调用方须保证只在浏览器环境执行 */
+export async function loadOrt(): Promise<typeof import('onnxruntime-web')> {
+  const ort = await import('onnxruntime-web/wasm')
   ort.env.wasm.wasmPaths = ORT_WASM_PATHS
   // 多线程需要 crossOriginIsolated；非隔离环境自动回退单线程，这里不强行开启
   return ort

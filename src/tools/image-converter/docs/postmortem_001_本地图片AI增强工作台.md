@@ -7,14 +7,14 @@
 
 | 项 | 选型 | 版本 | 理由与核查 |
 | --- | --- | --- | --- |
-| 推理引擎 | onnxruntime-web | 1.30.0 | 双 EP：WebGPU（Chromium 113+ 桌面/Android）+ WASM 全浏览器回退；无自研后端可离线推理 |
+| 推理引擎 | onnxruntime-web（`/wasm` 子入口） | 1.30.0 | **WASM-only**：主入口/WebGPU EP 的 jsep.wasm≈27MiB 超 EdgeOne Pages 单文件 25MiB 上限；`onnxruntime-web/wasm` 仅注册 wasm EP（运行时零 jsep 加载）、单文件 13.6MiB 合规、全浏览器可用 |
 | 超分模型 | Real-ESRGAN x4plus anime 6B（ONNX） | HF 直链 | **BSD-3-Clause，可商用**；input=`image.1`、output=`image`、scale=4 |
 | 去背景模型 | MODNet quantized（ONNX） | HF 直链 | **Apache-2.0，可商用**；input=`input`、output=`output` |
 | 批量压缩 | fflate | 0.8.3 | 无依赖 ZIP 解压/打包（unzipSync/zipSync） |
 | 页面 | Vue 3 + Vite + TS strict | fangzi 现有栈 | 不引入重型框架，增量式集成 |
 | 计费 | fangzi `src/core/billing/`（LocalMockProvider） | 现有 | 点即支付演示；`VITE_BILLING_ENDPOINT` 切真实网关 |
 | SEO | 动态 title/meta + JSON-LD SoftwareApplication + 语义化 HTML | — | 2026 GEO/AEO 趋势：AI 搜索占比 45%+、约 71% 被引页面带 JSON-LD；Google 弃用 Dataset/Q&A，保留 SoftwareApplication/WebSite/FAQPage 等 evergreen 类型 |
-| wasm 部署 | **自托管** `public/onnx/`（simd-threaded + jsep，41MB） | — | jsdelivr CDN 在沙箱与国内网络不可达（curl 000），改随应用部署 + SW CacheFirst（cacheName `fangzi-ai-models`，90 天/30 条） |
+| wasm 部署 | **自托管** `public/onnx/`（仅 simd-threaded 13.6MiB） | — | jsdelivr CDN 在沙箱与国内网络不可达（curl 000），改随应用部署 + SW CacheFirst（cacheName `fangzi-ai-models`，90 天/30 条）；配合构建后清理脚本保证单文件 <25MiB |
 
 **依赖漏洞核查声明**：本环境 `npm audit` 不可用（npmmirror 端点返回 404/501），改为**包版本核查**——onnxruntime-web 1.30.0（官方当前版，无已知高危）、fflate 0.8.3（2023-11 发布，社区无已知 CVE）；已卸载曾被短暂引入的 @huggingface/transformers（见踩坑 2），`package.json` 现仅保留上述两个运行时依赖。
 
@@ -37,6 +37,7 @@
 5. **Node 测试无 `import.meta.env`** → `ORT_WASM_PATHS`/`billingProvider()` 需防御式读取，否则 TypeError。
 6. **计费 provider 是模块单例** → 内存订单/用量跨测试残留，导致用例互相污染；新增 `__resetBillingForTest()` 测试钩子 + `beforeEach` 隔离，并修正两个原本依赖「上一个用例遗留买断订单」的断言。
 7. **Node 侧 ort 解析模型需本地文件/绝对 wasmPaths**：相对路径报 ERR_MODULE_NOT_FOUND；验证脚本在项目目录内运行并传绝对路径。
+8. **EdgeOne Pages 单文件 25MiB 硬限制（本项目最关键的部署红线）**：上线部署报 `Files size limit exceeded. The maximum size for a single file is 25MiB`，超限文件为 onnx 的 jsep.wasm（27MiB）与 asyncify（25.5MiB）。**责任自省**：pipeline PM 阶段只核到「静态托管、不能跑动态服务端」，未把「单文件 25MiB」这一量化指标与选型的 41MB wasm（含 27MiB 单文件）对账；architect/dev 的选型也未做平台红线核查——这是合规流程缺口，教训是**平台硬限制必须量化到选型单文件**。修复链路：①先尝试删 jsep 保 wasm-only → 失败（ort 主入口初始化无条件 import jsep 引导，jsep 缺失致 wasm EP 也初始化失败）；②再尝试只删 jsep.wasm 保 jsep.mjs → 失败（jsep.mjs 被 import 即 fetch jsep.wasm）；③最终切 **`onnxruntime-web/wasm` WASM-only 子入口**（grep 确认其仅含空回调钩子、零 jsep/asyncify 加载），产物最大单文件 13.6MiB，部署合规，AI 实测去背景 4.4s / 超分 4.7s。新增 `scripts/postbuild-clean-wasm.mjs` 构建后校验单文件上限并清理残留。
 
 ## 验证覆盖
 
@@ -44,7 +45,8 @@
 - **构建与回归**：`vue-tsc --noEmit` + `vite build` 通过；`npm run verify:tools` 12 工具 manifest/插件包/示例提问回归通过。
 - **E2E（Playwright + 系统 Chromium）11/11 通过**：SEO title/description/JSON-LD ✓；单张转换+下载 ✓；免费额度内 AI 可用+实际消耗 ✓；AI 去背景链路出结果（步骤日志含「去背景」）✓；买断后解锁且免费额度保留 ✓；批量导入 3 张计数 ✓；批量全任务 done=3/3 ✓；ZIP 导出 ✓。
 - **多端多尺寸**：PC 1280×800、平板 834×1112、手机 375×812 三端单张页**无横向溢出**（scrollWidth-clientWidth ≤ 0）；平板/手机批量流程 2 张全部成功。各端典型尺寸（PC ≥1280、平板 768–1024、手机 320–480）覆盖主要业务场景。
-- **AI 链路实跑**：去背景（MODNet，WASM CPU）128px 图约 8s 出透明 PNG；超分（Real-ESRGAN x4，WASM CPU）32px→128px 出结果；均无 console error。
+- **AI 链路实跑**：去背景（MODNet，WASM CPU）128px 图约 4.4s 出透明 PNG；超分（Real-ESRGAN x4，WASM CPU）32px→128px 约 4.7s 出结果；均无 console error、无 jsep 请求。
+- **部署合规**：`npm run build` 内置 postbuild 校验，产物最大单文件 13.6MiB < 25MiB（EdgeOne Pages 限制），jsep/asyncify 零残留。
 - **截图有效性验证（guide 引用 6 张，全部真实运行界面）**：
 
 | 截图 | 大小 | 内容 | 通过 |

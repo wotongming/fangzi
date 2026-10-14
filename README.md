@@ -152,7 +152,7 @@ npm run new:tool -- <kebab-id> <web|plugin> "工具名称"  # 生成新工具骨
 - **解决痛点**：在线工具担心隐私泄露/有水印/限次数；专业软件贵且门槛高；批量与 AI 能力分散在多个工具。
 - **关键词**：图片转换、图片压缩、webp、jpeg、png、格式转换、压缩图片、改尺寸、批量处理、zip、去背景、抠图、AI超分、图片放大、image。
 - **计费**：免费增值（基础转换免费 + 每日 3 张 AI 免费额度）+ 买断 ¥29.90 + 订阅 ¥9.90/月·¥89/年 + 用量包 ¥9.90/张 + 平台分成 20%（本地演示支付，正式对接真实收银台）。
-- **技术**：onnxruntime-web（WebGPU→WASM 双 EP 降级）、fflate 批量 ZIP、wasm 自托管 + SW 缓存、GEO/AEO SEO（JSON-LD SoftwareApplication）。
+- **技术**：onnxruntime-web WASM 推理（`/wasm` 子入口，单文件 13.6MiB 合规 EdgeOne 25MiB 限制）、fflate 批量 ZIP、wasm 自托管 + SW 缓存、GEO/AEO SEO（JSON-LD SoftwareApplication）。
 - **文档**：`src/tools/image-converter/docs/`（guide 使用指导书 / postmortem 技术沉淀 / 001 链路 innovator-pm-architect-dev-ops 五阶段文档 / 真实界面截图）。
 - **更新时间**：2026-10-15 ｜ 状态：beta ｜ 版本：1.1.0
 

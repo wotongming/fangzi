@@ -1,7 +1,7 @@
 /**
  * AI 增强执行：
  * - 去背景（MODNet）：@huggingface/transformers 管道，主线程推理（官方 demo 同款，模型约 10MB，proxy=false）
- * - 超分（Real-ESRGAN x4 ONNX）：onnxruntime-web 直接推理，手动 RGB 张量预处理/后处理
+ * - 超分（Real-ESRGAN x4 ONNX）：onnxruntime-web WASM 直接推理，手动 RGB 张量预处理/后处理
  * 全程本地推理；首次使用按需下载模型（transformers 自带 IndexedDB 缓存）。
  */
 import { AI_MODELS, type AiModelId } from './models'
@@ -14,7 +14,7 @@ export interface AiRunResult {
   blob: Blob
   ext: 'png'
   ms: number
-  runtime: 'webgpu' | 'wasm'
+  runtime: 'wasm'
 }
 
 function clamp255(v: number): number {
@@ -102,7 +102,7 @@ interface OrtLike {
 
 /**
  * 超分（ort）：输入 RGB [0,1] float32 [1,3,H,W] → 输出 [1,3,4H,4W] → 画布导出 PNG。
- * 推理失败时逐级降级：webgpu → wasm，仍失败抛错由 UI 呈现。
+ * WASM（CPU）单后端推理（WebGPU EP 的 jsep.wasm 超 EdgeOne Pages 25MiB 单文件限制，见 loader.ts 说明）。
  */
 export async function upscale(blob: Blob, onProgress?: (p: number) => void): Promise<AiRunResult> {
   const meta = AI_MODELS.upscale
@@ -114,46 +114,37 @@ export async function upscale(blob: Blob, onProgress?: (p: number) => void): Pro
   const rgb = rgbaToNchw(ctx.getImageData(0, 0, inputCanvas.width, inputCanvas.height))
   const [W, H] = [inputCanvas.width, inputCanvas.height]
 
-  let runtime = await detectRuntime()
-  const attempts: Array<'webgpu' | 'wasm'> = runtime === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm']
-  let lastError: unknown = null
-  for (const rt of attempts) {
-    runtime = rt
-    let session: Awaited<ReturnType<OrtLike['InferenceSession']['create']>> | null = null
-    try {
-      onProgress?.(0.2)
-      const ort = (await loadOrt(rt)) as unknown as OrtLike
-      session = await ort.InferenceSession.create(meta.source!, {
-        executionProviders: [rt === 'webgpu' ? 'webgpu' : 'wasm'],
-        logSeverity: 3
-      })
-      onProgress?.(0.5)
-      const feeds = { [meta.inputName!]: new ort.Tensor('float32', rgb, [1, 3, H, W]) }
-      const results = await session.run(feeds)
-      onProgress?.(0.85)
-      const tensor = results[meta.outputName!]
-      if (!tensor) throw new Error(`模型输出缺少 ${meta.outputName}`)
-      const N = tensor.dims[0]!
-      const C = tensor.dims[1]!
-      const OH = tensor.dims[2]!
-      const OW = tensor.dims[3]!
-      if (N !== 1 || C !== 3) throw new Error(`非预期输出形状：${tensor.dims.join('x')}`)
-      const outCanvas = document.createElement('canvas')
-      outCanvas.width = OW
-      outCanvas.height = OH
-      const octx = outCanvas.getContext('2d')!
-      octx.putImageData(nchwToRgba(tensor.data, OH, OW), 0, 0)
-      onProgress?.(0.95)
-      const outBlob = await canvasToBlob(outCanvas)
-      return { blob: outBlob, ext: 'png', ms: performance.now() - started, runtime }
-    } catch (e) {
-      lastError = e
-      // webgpu 失败 → 继续 wasm；wasm 失败 → 抛出
-    } finally {
-      session?.release()
-    }
+  const runtime = await detectRuntime()
+  let session: Awaited<ReturnType<OrtLike['InferenceSession']['create']>> | null = null
+  try {
+    onProgress?.(0.2)
+    const ort = (await loadOrt()) as unknown as OrtLike
+    session = await ort.InferenceSession.create(meta.source!, {
+      executionProviders: ['wasm'],
+      logSeverity: 3
+    })
+    onProgress?.(0.5)
+    const feeds = { [meta.inputName!]: new ort.Tensor('float32', rgb, [1, 3, H, W]) }
+    const results = await session.run(feeds)
+    onProgress?.(0.85)
+    const tensor = results[meta.outputName!]
+    if (!tensor) throw new Error(`模型输出缺少 ${meta.outputName}`)
+    const N = tensor.dims[0]!
+    const C = tensor.dims[1]!
+    const OH = tensor.dims[2]!
+    const OW = tensor.dims[3]!
+    if (N !== 1 || C !== 3) throw new Error(`非预期输出形状：${tensor.dims.join('x')}`)
+    const outCanvas = document.createElement('canvas')
+    outCanvas.width = OW
+    outCanvas.height = OH
+    const octx = outCanvas.getContext('2d')!
+    octx.putImageData(nchwToRgba(tensor.data, OH, OW), 0, 0)
+    onProgress?.(0.95)
+    const outBlob = await canvasToBlob(outCanvas)
+    return { blob: outBlob, ext: 'png', ms: performance.now() - started, runtime }
+  } finally {
+    session?.release()
   }
-  throw lastError instanceof Error ? lastError : new Error('AI 超分失败')
 }
 
 /**
@@ -189,39 +180,30 @@ export async function removeBackground(blob: Blob, onProgress?: (p: number) => v
   }
 
   onProgress?.(0.3)
-  let runtime = await detectRuntime()
-  const attempts: Array<'webgpu' | 'wasm'> = runtime === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm']
-  let lastError: unknown = null
+  const runtime = await detectRuntime()
   let matte: Float32Array | null = null
   let outW = 0
   let outH = 0
-  for (const rt of attempts) {
-    runtime = rt
-    let session: Awaited<ReturnType<OrtLike['InferenceSession']['create']>> | null = null
-    try {
-      onProgress?.(0.4)
-      const ort = (await loadOrt(rt)) as unknown as OrtLike
-      session = await ort.InferenceSession.create(meta.source!, {
-        executionProviders: [rt === 'webgpu' ? 'webgpu' : 'wasm'],
-        logSeverity: 3
-      })
-      const feeds = { [meta.inputName!]: new ort.Tensor('float32', tensor, [1, 3, th, tw]) }
-      const results = await session.run(feeds)
-      onProgress?.(0.75)
-      const out = results[meta.outputName!]
-      if (!out) throw new Error(`模型输出缺少 ${meta.outputName}`)
-      matte = out.data
-      outW = out.dims[2] ?? tw
-      outH = out.dims[3] ?? th
-      break
-    } catch (e) {
-      lastError = e
-      // webgpu 失败 → 继续 wasm；wasm 失败 → 抛出
-    } finally {
-      session?.release()
-    }
+  let session: Awaited<ReturnType<OrtLike['InferenceSession']['create']>> | null = null
+  try {
+    onProgress?.(0.4)
+    const ort = (await loadOrt()) as unknown as OrtLike
+    session = await ort.InferenceSession.create(meta.source!, {
+      executionProviders: ['wasm'],
+      logSeverity: 3
+    })
+    const feeds = { [meta.inputName!]: new ort.Tensor('float32', tensor, [1, 3, th, tw]) }
+    const results = await session.run(feeds)
+    onProgress?.(0.75)
+    const out = results[meta.outputName!]
+    if (!out) throw new Error(`模型输出缺少 ${meta.outputName}`)
+    matte = out.data
+    outW = out.dims[2] ?? tw
+    outH = out.dims[3] ?? th
+  } finally {
+    session?.release()
   }
-  if (!matte) throw lastError instanceof Error ? lastError : new Error('AI 去背景失败')
+  if (!matte) throw new Error('AI 去背景失败')
 
   // —— 后处理：matte 缩放回原图尺寸并作为 alpha 通道 ——
   const matteCanvas = document.createElement('canvas')

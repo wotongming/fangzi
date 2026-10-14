@@ -10,10 +10,9 @@
 
 ## 运行环境要求
 
-- 浏览器：Chromium 系（Chrome / Edge / 新版 Opera）优先；Safari、Firefox 也可用（AI 自动回退 WASM CPU）。
-- WebGPU 加速：需 Chrome/Edge 113+ 桌面版；不支持时自动降级 WASM，功能不变、速度略慢。
+- 浏览器：推理统一 **WASM（CPU）**，Chrome / Edge / Safari / Firefox 全浏览器可用（不含 WebGPU 依赖）。
 - 免安装：PWA 直接访问即可；建议「添加到首页」以获得离线体验。
-- 磁盘：AI 模型缓存约 30MB（超分 18MB + 去背景 11MB）+ 推理 wasm 41MB（随应用部署，非用户下载）。
+- 磁盘：AI 模型缓存约 30MB（超分 18MB + 去背景 11MB）+ 推理 wasm 13.6MB（随应用部署，非用户下载）。
 
 ## 安装与启动
 
@@ -68,8 +67,8 @@ npm run build && npm run preview   # 产物预览
 
 | 问题 | 处理 |
 | --- | --- |
-| 首次 AI 处理很慢？ | 需下载模型（超分 18MB / 去背景 11MB）+ 初始化 wasm（41MB 随应用部署）。已缓存后再次使用只需推理时间（128px 图去背景约 8s，CPU WASM）。 |
-| 提示「WebGPU 不可用」？ | 属正常降级：自动走 WASM（CPU）推理，功能不变。Safari/Firefox 无 WebGPU 支持。 |
+| 首次 AI 处理很慢？ | 需下载模型（超分 18MB / 去背景 11MB）+ 初始化 wasm（13.6MB 随应用部署）。已缓存后再次使用只需推理时间（128px 图去背景约 4.4s，WASM CPU）。 |
+| 为什么不用 GPU 加速？ | EdgeOne Pages 静态托管单文件上限 25MiB，而 WebGPU 后端 wasm（27MiB）必然超限；WASM 推理全浏览器可用、部署合规，性能已足够（见 postmortem 踩坑 8）。 |
 | 批量按钮灰的？ | 批量工具链需解锁（买断/订阅/用量包任一）。AI 复选框灰的是今日免费额度已用完且未购买。 |
 | 模型下载失败/很慢？ | 模型托管于 HuggingFace 直链（商用友好授权），可重试；已下载部分会被 SW 缓存，后续离线可复用。 |
 | 我的图片会上传吗？ | 不会。转换、裁剪、AI 推理全部在浏览器本地完成，无任何网络上传（仅模型文件下载是出网请求）。 |

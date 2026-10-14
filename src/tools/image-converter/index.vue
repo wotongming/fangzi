@@ -44,7 +44,7 @@ watch(billing.billingVersion, () => {
   summary.value = buildAccessSummary(billing, billing.plan, billing.toolId)
 })
 
-const runtime = ref<'webgpu' | 'wasm'>('wasm')
+const runtime = ref<'wasm'>('wasm')
 const supportsWebp = ref(true)
 onMounted(async () => {
   runtime.value = await detectRuntime()
