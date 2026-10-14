@@ -40,6 +40,28 @@ export interface BillingPlan {
   quotaCycle?: 'day' | 'month' | 'never'
   /** freemium：功能权益清单（用于前端展示与权限判定） */
   features?: BillingFeature[]
+  /** 买断之外的补充变现（订阅制 / 用量包 / 平台分成），可选扩展，不影响既有判定 */
+  subscription?: {
+    /** 月度订阅价（分） */
+    priceCentsPerMonth?: number
+    /** 年度订阅价（分） */
+    priceCentsPerYear?: number
+  }
+  usagePack?: {
+    /** 每单位用量包价格（分） */
+    priceCentsPerUnit?: number
+    /** 计量单位描述，如「次」「张」 */
+    unit?: string
+    /** 每日免费额度（单位同 unit） */
+    freePerDay?: number
+  }
+  platformSplit?: {
+    enabled: boolean
+    /** 分销/平台分成比例（百分比，0-100） */
+    partnerRatePct?: number
+    /** 分成说明文案 */
+    note?: string
+  }
 }
 
 export interface BillingFeature {

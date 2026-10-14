@@ -62,6 +62,16 @@ export default defineConfig({
               networkTimeoutSeconds: 5,
               expiration: { maxEntries: 5 }
             }
+          },
+          {
+            // AI 推理资源：自托管 onnx wasm 与 HF 模型文件，首次使用后离线可复用
+            urlPattern: ({ url }) =>
+              url.pathname.includes('/onnx/') || url.hostname.includes('huggingface.co'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'fangzi-ai-models',
+              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 90 }
+            }
           }
         ]
       },

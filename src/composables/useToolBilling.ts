@@ -16,6 +16,7 @@ import { formatPrice } from '../core/constants'
 import type { BillingPlan } from '../core/types'
 
 export interface ToolBillingApi {
+  toolId: string
   plan: BillingPlan
   currency: 'CNY' | 'USD'
   isFree: boolean
@@ -23,6 +24,7 @@ export interface ToolBillingApi {
   billingVersion: ReturnType<typeof ref<number>>
   canUse: (featureKey?: string) => AccessDecision
   usage: () => UsageInfo | null
+  isOwned: (kind: OrderKind) => boolean
   priceText: (cents?: number) => string
   buy: (kind?: OrderKind, units?: number) => Promise<Order>
   consume: (amount?: number) => void
@@ -56,6 +58,7 @@ export function useToolBilling(toolId: string): ToolBillingApi {
   }
 
   return {
+    toolId,
     plan,
     currency,
     isFree: plan.mode === 'free',
@@ -69,6 +72,10 @@ export function useToolBilling(toolId: string): ToolBillingApi {
     usage: () => {
       void billingVersion.value
       return plan.mode === 'usage' ? provider.getUsage(plan, toolId) : null
+    },
+    isOwned: (kind: OrderKind) => {
+      void billingVersion.value
+      return provider.isOwned(toolId, kind)
     },
     priceText: (cents?: number) => formatPrice(cents, currency),
     buy,
