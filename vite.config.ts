@@ -15,20 +15,25 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png'],
       manifest: {
+        id: base,
         name: '方子 - 对症下药的工具箱',
         short_name: '方子',
         description: '覆盖生活、工作、合规等场景的单点工具集合，说说你遇到的问题，给你开个小方子。',
         lang: 'zh-CN',
+        dir: 'ltr',
         start_url: base,
         scope: base,
         display: 'standalone',
+        display_override: ['standalone', 'minimal-ui'],
         orientation: 'portrait',
+        categories: ['productivity', 'utilities'],
         background_color: '#f7f6f2',
         theme_color: '#3f7d5e',
         icons: [
-          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: 'icons/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+          { src: `${base}icons/icon-192.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: `${base}icons/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
+          // 同一 512 图标同时提供 maskable 用途，保证安卓启动器遮罩与安装校验都命中
+          { src: `${base}icons/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       },
       workbox: {
