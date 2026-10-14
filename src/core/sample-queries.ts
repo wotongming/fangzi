@@ -20,7 +20,8 @@ export const SAMPLE_QUERIES: SampleQuery[] = [
   { text: '下载的文件怎么验证 SHA256 有没有被篡改？', expectToolId: 'file-hash-check' },
   { text: '想生成一个又长又安全的随机密码', expectToolId: 'password-generator' },
   { text: '照片太大，怎么在本地转成 WebP 压缩？', expectToolId: 'image-converter' },
-  { text: '网页上看到的问题想右键直接在方子里搜', expectToolId: 'fangzi-companion' }
+  { text: '网页上看到的问题想右键直接在方子里搜', expectToolId: 'fangzi-companion' },
+  { text: '微信支付宝花的钱太散，想记个家庭账本看看钱花哪了', expectToolId: 'household-finance' }
 ]
 
 /** 随机抽取 n 条（使用 Fisher–Yates 部分洗牌，不修改原数组） */
