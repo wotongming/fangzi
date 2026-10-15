@@ -297,3 +297,14 @@ fangzi/
 - **数据与合规**：提交默认存访问者浏览器本地；组件标签支持 `data-endpoint` 把提交 POST 到自有服务；产物商用友好（W3C 标准、零依赖）。
 - **计费**：免费增值（3 类基础模板、最多 3 个本地组件、保留角标）＋专业版买断 ¥39.90（进阶模板、不限数量、去角标/品牌定制、CSV 导出）。
 - **位置**：`src/tools/embed-widget-builder/`，路由 `/#/t/embed-widget-builder`；文档见该目录 `docs/`（guide / postmortem / 五阶段文档 / 真实界面截图）。
+
+## 跨框架组件库工作台（wc-workbench · 2026-10-15）
+
+- **简介**：浏览器内可视化开发 Web Component——表单定义属性（property/attribute）、事件（CustomEvent）、插槽（slot）、CSS 变量主题，一次建模同时产出零依赖原生自定义元素、Lit 3 + TS 组件、React/Vue 适配 wrapper、API 文档与 custom-elements.json；Shadow DOM 沙箱实时预览改值与事件，一键打包单文件或可直接发布的 npm zip。
+- **目标用户**：前端/组件库工程师、设计系统团队、需要把同一组件分发到 React/Vue/Angular/老 jQuery 多技术栈的团队与独立开发者。
+- **使用场景**：建设跨框架设计系统、给多套异构业务系统提供统一组件、沉淀可 npm 分发的自定义元素、教学/原型快速出可运行组件。
+- **解决痛点**：同一组件在 React/Vue/老系统各写一遍、手写 custom-elements.json 与文档繁琐、组件联调要起多框架工程、SaaS 组件平台收费且代码上云。
+- **关键词**：Web Component、自定义元素、Shadow DOM、Lit、React wrapper、Vue wrapper、custom-elements.json、跨框架组件库、组件文档、npm 包、设计系统、数据不出端。
+- **数据与合规**：建模/预览/打包全部浏览器本地完成（fflate MIT，零新增依赖），sandboxed iframe srcdoc 预览零网络；导入模型对全部标识符与注释做安全归一化；产物零依赖、商用友好。
+- **计费**：免费增值（原生生成、实时预览、API 文档、custom-elements.json、单文件/最小包、本地最多 3 个组件）＋专业版买断 ¥49.90（Lit 生成、React/Vue wrapper、完整 npm 包、本地组件不限量）。
+- **位置**：`src/tools/wc-workbench/`，路由 `/#/t/wc-workbench`；文档见该目录 `docs/`（guide / postmortem / 五阶段文档 / 9 张真实界面截图）。
