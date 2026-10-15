@@ -1,6 +1,10 @@
 {
-  "version": 1,
+  "version": 2,
+  "cache": "fangzi-model-files-v2",
   "shards": {
-    "/Xenova/whisper-tiny/onnx/decoder_model_merged_quantized.onnx": 3
+    "/Xenova/whisper-tiny/onnx/decoder_model_merged_quantized.onnx": {
+      "count": 3,
+      "size": 30727765
+    }
   }
 }

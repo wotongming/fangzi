@@ -53,6 +53,8 @@
    - 一度改了 `public/sw-model-shards.js`、加了 `public/mf/shards.json` 但 dist 里仍是旧文件——`vite build` 非 `emptyOutDir` 且 dist 被运行中的 preview 以 FUSE 挂载占用，清空失败致构建中止。教训：改 public 静态资源后，按端口 kill preview → 干净重建 → 校验 `dist/` 确有新文件，别只看 build 成功。
    - SW 内部 `fetch('.partN')` **不会再触发自身/页面的 request 事件**，故 E2E 无法从页面侧统计到分片请求；正确做法是直接 fetch 完整逻辑文件断言合并字节数。
 
+8. **真机 protobuf parsing failed：客户端缓存了部署竞态下的坏响应（V1.0.2）**：V1.0.1 上线后真机仍报 `Can't create a session. ERROR_CODE 7 … protobuf parsing failed`，但服务端逐文件核查（裸域/www、encoder 10,124,910、decoder 三片 15M+15M+727,765、config 2248、SW 版本）全部正确。判定为**手机端早期某次加载（部署未完成 / SW 刚接管的竞态窗口）把非分片文件的 HTML 回退当 200 写进了 Cache Storage，之后一直命中坏缓存**；V1.0 旧 SW 对非分片文件也无类型/完整性校验。V1.0.2 加固：①缓存名升级 `fangzi-model-files-v2` 一次性作废旧缓存；②`shards.json` 升 v2，分片项带 `{count,size}`，合并后强制校验总字节=30,727,765，不符即抛错；③**所有 /mf 文件（含 encoder/config/tokenizer）统一拒绝 text/html / 首字节 `0x3c`，绝不写入缓存**；④命中缓存时分片文件复核 content-length、任何文件拒绝 HTML，不符即删除重取。复跑 E2E 14/14。
+
 ## 验证覆盖
 
 - **档位 H 质量门全绿**：`vue-tsc --noEmit` 0 错；**全量单测 140/14 通过**（本工具 `local-transcribe.test.ts` 14 例覆盖分段/时钟/SRT/合并拆分/规则纪要/额度/导出等纯逻辑）；`npm run verify:tools` = **17 个工具** manifest/注册/示例回归通过；`npm run build` 成功。
