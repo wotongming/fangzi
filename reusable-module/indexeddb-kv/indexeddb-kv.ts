@@ -21,12 +21,18 @@ export interface IndexedDBConfig {
   stores: IndexedDBStoreSpec[]
 }
 
-let dbPromise: Promise<IDBDatabase> | null = null
+/**
+ * 按 dbName 缓存连接（多工具各自独立库名时互不串用）。
+ * 旧实现只有一个模块级单例，先打开 A 库再打开 B 库会错误复用 A 连接；
+ * 改为 Map 后同一 dbName 复用、不同 dbName 独立，函数签名保持不变（向后兼容）。
+ */
+const dbPromiseMap = new Map<string, Promise<IDBDatabase>>()
 
 /** 打开（或复用）数据库连接；onupgradeneeded 按 spec 建表建索引 */
 export function openIndexedDB(cfg: IndexedDBConfig): Promise<IDBDatabase> {
-  if (dbPromise) return dbPromise
-  dbPromise = new Promise((resolve, reject) => {
+  const cached = dbPromiseMap.get(cfg.dbName)
+  if (cached) return cached
+  const dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
       reject(new Error('当前环境不支持 IndexedDB，请使用现代浏览器'))
       return
@@ -46,6 +52,9 @@ export function openIndexedDB(cfg: IndexedDBConfig): Promise<IDBDatabase> {
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error ?? new Error('打开本地数据库失败'))
   })
+  dbPromiseMap.set(cfg.dbName, dbPromise)
+  // 打开失败时移除缓存，允许后续重试（避免坏 Promise 被永久缓存）
+  dbPromise.catch(() => dbPromiseMap.delete(cfg.dbName))
   return dbPromise
 }
 

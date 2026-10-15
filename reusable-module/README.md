@@ -6,7 +6,7 @@
 
 | 模块 | 简介 | 位置 | 状态 |
 |---|---|---|---|
-| indexeddb-kv | 通用 IndexedDB KV 封装：单例连接、增删改查、清空、按索引范围查询（零依赖 TS） | `indexeddb-kv/indexeddb-kv.ts` | 2026-10-14 由家庭财务管家（pipeline 014）沉淀 |
+| indexeddb-kv | 通用 IndexedDB KV 封装：按 dbName 多库缓存连接、增删改查、清空、按索引范围查询（零依赖 TS）；多工具不同库名互不串用 | `indexeddb-kv/indexeddb-kv.ts` | 2026-10-14 家庭财务管家沉淀；2026-10-15 离线语音转写（pipeline 004）增强多库缓存 |
 | use-seo | GEO/AEO 友好元信息注入：动态 Title/Meta + JSON-LD 结构化数据（SoftwareApplication/WebSite），适配 AI 搜索引用 | `use-seo/use-seo.ts` | 2026-10-15 由图片处理工作台（pipeline 001）沉淀 |
 | worker-post | 安全向 Web Worker 发消息：自动剥离 Vue reactive Proxy、自动零拷贝转移 ArrayBuffer、File/Blob 走克隆不误转移 | `worker-post/worker-post.ts` | 2026-10-15 由 GPU 大数据可视化面板（pipeline 002）沉淀 |
 | gpu-detect | 浏览器 GPU 能力探测与降级：只探 adapter（带超时）不销毁 device，规避 Dawn instance 污染，返回 WebGPU/WebGL2/Canvas2D 推荐 | `gpu-detect/gpu-detect.ts` | 2026-10-15 由 GPU 大数据可视化面板（pipeline 002）沉淀 |

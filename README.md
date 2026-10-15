@@ -319,3 +319,14 @@ fangzi/
 - **数据与合规**：解析/嵌入/存储全部浏览器本地（IndexedDB 三表 + Cache Storage 缓存模型）；模型 `bge-small-zh-v1.5`（MIT）、onnxruntime-web（MIT）均商用友好；零新增 npm 依赖，自实现 BERT WordPiece 分词；V1 支持 txt/md/csv/html（pdf.js/mammoth 列 V1.1），答案为抽取式不接生成式 LLM、零幻觉可溯源；模型文件运行时下载不占托管存储。
 - **计费**：免费增值（4 格式解析、本地 bge-small 语义模型 + 关键词混合检索、最多 20 个文档）＋专业版买断 ¥49.90（文档不限量、自定义模型源/自带对象存储 CDN）。
 - **位置**：`src/tools/local-knowledge-base/`，路由 `/#/t/local-knowledge-base`；文档见该目录 `docs/`（guide / postmortem / 五阶段文档 / 5 张 PC·平板·手机真实界面截图）。
+
+## 离线语音转写与会议纪要（local-transcribe · 2026-10-15）
+
+- **简介**：把会议、采访、课堂、通话录音拖进浏览器或直接麦克风录制，全程本机转写——Transformers.js v4 + 自托管 onnxruntime-web 1.31 单线程 WASM 运行 Xenova/whisper-tiny 多语量化模型，生成带时间戳、可点击波形回听定位的文字稿，支持就地编辑分段、0.75×–2× 变速、导出 TXT/Markdown/SRT，并在本地纯规则抽取一句话摘要/要点/待办/决定；音频与文稿不出设备，模型首次下载后离线可用。
+- **目标用户**：会议频繁的职场人、律师/法务/金融/HR 等合规敏感岗位、记者/播客/自媒体创作者、学生/医生/研究人员。
+- **使用场景**：会后把录音转带时间戳文字稿并整理纪要待办、采访播客转文稿并出 SRT 字幕、涉密谈话不能上云需离线识别、弱网断网环境录音转写、不想按分钟为云端 Otter 类服务付费。
+- **解决痛点**：敏感录音上公有云有合规红线、云端按时长持续收费、弱网断网不可用、转写稿无时间戳难以回听核对。
+- **关键词**：语音转文字、录音转文字、离线转写、本地转写、会议纪要、会议记录、whisper、asr、speech to text、字幕、srt、采访转写、播客转文字、时间戳、波形、IndexedDB、WebAssembly、数据不出端。
+- **数据与合规**：解码/推理/存储全部浏览器本地（IndexedDB 仅存文稿不存音频，Cache Storage 缓存模型）；Whisper 权重（MIT）、@huggingface/transformers（Apache-2.0）、onnxruntime-web（MIT）均商用友好；模型源运行时探测 huggingface.co 官方 CDN（hf-mirror 浏览器跨域不可用作兜底），decoder q8 约 30.5MB 超 25MiB 故运行时下载不入包，推理内核用 14MB plain WASM 自托管。
+- **计费**：免费增值（每自然月 60 分钟、tiny 多语模型、麦克风+常见音频导入、TXT/MD/SRT 导出、本地历史与抽取式纪要）＋专业版买断 ¥49.90（转写时长不限）。
+- **位置**：`src/tools/local-transcribe/`，路由 `/#/t/local-transcribe`；文档见该目录 `docs/`（guide / postmortem / 五阶段文档 / 4 张 PC·平板·手机真实界面截图）。V1 为 H 档 checkpoint，whisper tiny 中文准确率有限，base/small 模型、生成式纪要、说话人分离、视频提音轨列 V1.1。

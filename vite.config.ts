@@ -64,9 +64,11 @@ export default defineConfig({
             }
           },
           {
-            // AI 推理资源：自托管 onnx wasm 与 HF 模型文件，首次使用后离线可复用
+            // AI 推理资源：自托管 onnx/whisper wasm 与 HF 模型文件，首次使用后离线可复用
             urlPattern: ({ url }) =>
-              url.pathname.includes('/onnx/') || url.hostname.includes('huggingface.co'),
+              url.pathname.includes('/onnx/') ||
+              url.pathname.includes('/whisper/') ||
+              url.hostname.includes('huggingface.co'),
             handler: 'CacheFirst',
             options: {
               cacheName: 'fangzi-ai-models',
