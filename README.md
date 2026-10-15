@@ -327,6 +327,6 @@ fangzi/
 - **使用场景**：会后把录音转带时间戳文字稿并整理纪要待办、采访播客转文稿并出 SRT 字幕、涉密谈话不能上云需离线识别、弱网断网环境录音转写、不想按分钟为云端 Otter 类服务付费。
 - **解决痛点**：敏感录音上公有云有合规红线、云端按时长持续收费、弱网断网不可用、转写稿无时间戳难以回听核对。
 - **关键词**：语音转文字、录音转文字、离线转写、本地转写、会议纪要、会议记录、whisper、asr、speech to text、字幕、srt、采访转写、播客转文字、时间戳、波形、IndexedDB、WebAssembly、数据不出端。
-- **数据与合规**：解码/推理/存储全部浏览器本地（IndexedDB 仅存文稿不存音频，Cache Storage 缓存模型）；Whisper 权重（MIT）、@huggingface/transformers（Apache-2.0）、onnxruntime-web（MIT）均商用友好；模型源运行时探测 huggingface.co 官方 CDN（hf-mirror 浏览器跨域不可用作兜底），decoder q8 约 30.5MB 超 25MiB 故运行时下载不入包，推理内核用 14MB plain WASM 自托管。
+- **数据与合规**：解码/推理/存储全部浏览器本地（IndexedDB 仅存文稿不存音频，Cache Storage 缓存模型）；Whisper 权重（MIT）、@huggingface/transformers（Apache-2.0）、onnxruntime-web（MIT）均商用友好；**模型与推理内核全部同源自托管**（`/mf/` + `/whisper/`，不依赖 huggingface.co 等境外源，大陆 4G/WiFi 直连），decoder q8 30,727,765B 超 25MiB 切为三片由 Service Worker（`sw-model-shards.js` 按 `shards.json`）透明合并，推理内核用 14MB plain WASM。
 - **计费**：免费增值（每自然月 60 分钟、tiny 多语模型、麦克风+常见音频导入、TXT/MD/SRT 导出、本地历史与抽取式纪要）＋专业版买断 ¥49.90（转写时长不限）。
 - **位置**：`src/tools/local-transcribe/`，路由 `/#/t/local-transcribe`；文档见该目录 `docs/`（guide / postmortem / 五阶段文档 / 4 张 PC·平板·手机真实界面截图）。V1 为 H 档 checkpoint，whisper tiny 中文准确率有限，base/small 模型、生成式纪要、说话人分离、视频提音轨列 V1.1。

@@ -2,7 +2,14 @@
 
 - 对应 dev：`docs/stage/dev_004_离线语音转写与会议纪要.md`
 - 日期：2026-10-15
-- 档位：**H**（本地 WASM 推理 + 运行时下载约 40MB 模型 + 多格式音频解码）。本版交付「可运行 checkpoint + 已验证项 + 明确未完成项」。
+- 档位：**H**（本地 WASM 推理 + 运行时加载约 40MB 模型 + 多格式音频解码）。本版交付「可运行 checkpoint + 已验证项 + 明确未完成项」。
+
+> **2026-10-15 真机修复（V1.0.1）：模型改为同源自托管，解决大陆 4G 打不开。**
+> 真机（南京移动 4G，访问 `www.fangzi.asia`）点「开始转写」报 `Failed to fetch`：原实现运行时从 **huggingface.co 官方源**拉模型，云端无头环境能连（测试未暴露），但大陆移动网络直连 HuggingFace 被墙。排查确认：ModelScope 小文件接口不带 CORS（仅其大文件 302 到的 `cdn-lfs-cn-1` 带 `*`，但 config/tokenizer 浏览器读不了），不能整仓依赖。**最终方案——同源自托管 + Service Worker 分片合并**，与站点同域、大陆直连、天然离线：
+> - 全部模型文件放 `public/mf/Xenova/whisper-tiny/`（`env.allowLocalModels=true; allowRemoteModels=false; env.localModelPath='/mf/'`，transformers 按 `/mf/<modelId>/<file>` 取，本地路径不含 revision 层级）。
+> - decoder q8 **30,727,765B（>25MiB）** 切成 `part0/1/2`（15M+15M+727765）随站发布；新增 `public/sw-model-shards.js`（workbox `importScripts` 引入，并开 `skipWaiting/clientsClaim`）拦截 `/mf/`，按 `public/mf/shards.json` 的**精确片数**拉分片合并（精确清单是关键，见踩坑 6/7），合并后写 `fangzi-model-files` Cache。
+> - E2E 断言改为直接 fetch 完整 decoder 校验合并字节 **=30,727,765** 且零外部源；重测 **E2E 14/14**（真实转写约 6.1s）、140 单测、17 工具、dist **86MB / 95 文件 / 最大单文件 13.6MiB**。
+> 下方早期章节记录的「huggingface.co/hf-mirror 探测」是 V1.0 云端无头阶段的结论，**V1.0.1 起已不适用**，以本块为准。
 
 ## 技术选型与理由
 
@@ -39,12 +46,19 @@
 
 5. **E2E 断言自身修正**：`<audio>` 无 `controls` 不占可视盒，`waitForSelector` 默认等「可见」必超时 → 改 `state:'attached'` 并校验 src；多端原用全新 context（独立 IndexedDB 读不到记录）只拍到空历史 → 改同 context 内切视口、打开已存记录截真实结果页。
 
+6. **Service Worker 不接管首开页面（V1.0.1）**：workbox 默认不 `clientsClaim`，新 SW 即使 `activated`，**首次打开的标签 `navigator.serviceWorker.controller` 仍为 null**，此时 `/mf` 完整 decoder 请求直达静态服务器，被 SPA `navigateFallback` 回退成 200 的 `index.html`（990B，`text/html`），onnx 拿到 HTML 解析直接挂起（转写 30s 超时无错误）。修复：workbox 开 `skipWaiting:true + clientsClaim:true`，安装即接管；E2E 先等 `serviceWorker.ready`+controller 再测。
+
+7. **静态回退会污染分片；必须用精确清单且警惕增量构建残留**：
+   - 探测式拉分片（一直取到非 200）不可行——不存在的 `.partN` 也被 SPA 回退成 **200 HTML**，被当成第 4 片拼入，合并得到 30,733,705B（恰多 index.html 5,940B）。改为 `shards.json` 声明确定片数 + content-type/首字节 `0x3c('<')` 双保险拒绝 HTML。
+   - 一度改了 `public/sw-model-shards.js`、加了 `public/mf/shards.json` 但 dist 里仍是旧文件——`vite build` 非 `emptyOutDir` 且 dist 被运行中的 preview 以 FUSE 挂载占用，清空失败致构建中止。教训：改 public 静态资源后，按端口 kill preview → 干净重建 → 校验 `dist/` 确有新文件，别只看 build 成功。
+   - SW 内部 `fetch('.partN')` **不会再触发自身/页面的 request 事件**，故 E2E 无法从页面侧统计到分片请求；正确做法是直接 fetch 完整逻辑文件断言合并字节数。
+
 ## 验证覆盖
 
 - **档位 H 质量门全绿**：`vue-tsc --noEmit` 0 错；**全量单测 140/14 通过**（本工具 `local-transcribe.test.ts` 14 例覆盖分段/时钟/SRT/合并拆分/规则纪要/额度/导出等纯逻辑）；`npm run verify:tools` = **17 个工具** manifest/注册/示例回归通过；`npm run build` 成功。
-- **浏览器真实链路（实证，非 Node 模拟）**：Playwright + 无头 Chromium，导入真实 13s 英文 WAV → 原生解码 16k → 自托管 `/whisper` plain WASM 200 → huggingface.co 官方 CDN 下载 whisper-tiny q8 → 真实推理出两段文字稿（命中 dream/nation），用时约 8.2–8.9s；时间戳点击跳转、规则纪要、SRT 下载、免费额度 0.2/60 分钟、历史落库与打开、波形非白像素均通过。**E2E 14/14 通过。**
+- **浏览器真实链路（V1.0.1，实证）**：Playwright + 无头 Chromium（SW 已接管），导入真实 13s 英文 WAV → 原生解码 16k → 自托管 `/whisper` plain WASM 200 → **同源 `/mf` 经 SW 分片合并加载 whisper-tiny q8（decoder 合并字节精确 30,727,765，零 huggingface/镜像请求）** → 真实推理出两段文字稿（命中 dream/nation），用时约 6.1s；时间戳跳转、规则纪要、SRT、额度 0.2/60、历史、波形非白像素均通过。**E2E 14/14 通过。**
 - **多端多尺寸**：PC 1280×800、平板 834×1112、手机 375×812，转写空态与结果页横向溢出 Δ 均 ≤1px；移动端播放器换行、波形整行。
-- **EdgeOne 免费版限额实测**：`dist` **43MB**（< 5GiB）、**77 个文件**（< 20000）、**最大单文件 13.6MiB**（`ort-wasm-simd-threaded` wasm，< 25MiB）；26MB asyncify 已在 postbuild 阶段被清理守卫拦截，不进入产物。
+- **EdgeOne 免费版限额实测（V1.0.1 同源自托管后）**：`dist` **86MB**（< 5GiB）、**95 个文件**（< 20000）、**最大单文件 13.6MiB**（`ort-wasm-simd-threaded` wasm，< 25MiB）；模型最大 decoder 30.7MB 已切为 15M+15M+0.7M 三片，单文件全部 < 25MiB；26MB asyncify 已在 postbuild 阶段被清理守卫拦截。
 - **准确率边界（如实）**：英文近完美（"I have a dream. One day, this nation will rise up, live out the true meaning of its dream."）、chunk 时间戳正确；中文 4.5s 样本 tiny 识别较弱，guide 已明确声明并建议人工校对，base/small 列 V1.1。
 
 ### guide 截图有效性验证（均为本轮生产构建后真实页面实拍）

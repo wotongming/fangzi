@@ -1,6 +1,8 @@
 /**
  * 本地 ASR：Transformers.js v4 运行 Whisper-tiny（q8，MIT 权重）。
- * - 模型运行时从 hf-mirror 下载并由 Cache Storage 缓存（transformers 内部缓存），不入部署包；
+ * - 模型**同源自托管**在站点 /mf/Xenova/whisper-tiny/，大陆 4G/WiFi 直连、不依赖 huggingface.co；
+ *   超 EdgeOne 25MiB 的 decoder q8（约 30.7MB）构建期切成 .partN，由 Service Worker
+ *   （public/sw-model-shards.js）在 /mf/ 请求时透明合并；首次成功后写 Cache，离线可转写。
  * - onnxruntime-web 1.31 的 WASM 自托管在站点 /whisper/，与 003 的 /onnx（ort 1.30）隔离；
  * - 站点未设置 COOP/COEP（无 SharedArrayBuffer），显式 proxy=false，ort 自动回退单线程 WASM，
  *   不破坏 PWA 跨域与可安装性。
@@ -10,32 +12,6 @@ import type { AsrProgress } from './types'
 /** V1 固定 tiny 多语 q8：体积约 40MB 内、CPU 可跑；base/small 列 V1.1 */
 export const MODEL_ID = 'Xenova/whisper-tiny'
 export const MODEL_LABEL = 'Whisper tiny（多语言，q8，约 40MB）'
-
-/**
- * 浏览器跨域模型源（按顺序探测，选第一个能完成 CORS 握手且可达的）。
- * 注意：hf-mirror.com 用 curl 看似回显 CORS，但浏览器跟随其 307 跳转会因跨域被拦（实测 HEAD/GET 均失败），
- * 因此官方源在浏览器端优先；hf-mirror 仅在其浏览器 CORS 恢复时作为兜底。
- * decoder q8 约 30.5MB（> EdgeOne 单文件 25MiB），故模型运行时从 CDN 下载、不随包自托管。
- */
-const CANDIDATE_HOSTS = ['https://huggingface.co/', 'https://hf-mirror.com/']
-
-async function pickModelHost(onProgress?: (p: AsrProgress) => void): Promise<string> {
-  for (const host of CANDIDATE_HOSTS) {
-    const url = `${host}${MODEL_ID}/resolve/main/config.json`
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 6000)
-    try {
-      const res = await fetch(url, { method: 'HEAD', signal: ctrl.signal, cache: 'no-store' })
-      if (res.ok) return host
-    } catch {
-      // 该源 CORS/网络不可用，尝试下一个
-    } finally {
-      clearTimeout(timer)
-    }
-  }
-  onProgress?.({ phase: 'download', percent: 0, message: '模型源连接较慢，正在尝试官方源…' })
-  return CANDIDATE_HOSTS[0]!
-}
 
 type RawChunk = { timestamp: [number | null, number | null]; text: string }
 interface AsrOutput {
@@ -50,15 +26,17 @@ let envConfigured = false
 async function configureEnv(onProgress?: (p: AsrProgress) => void): Promise<void> {
   if (envConfigured) return
   const { env } = await import('@huggingface/transformers')
-  // 不使用本地预置模型；浏览器端选可达且 CORS 可用的源
-  env.allowLocalModels = false
-  env.remoteHost = await pickModelHost(onProgress)
+  // 仅用同源自托管模型：allowLocalModels=true 时 transformers 以 localModelPath + modelId/filename 取文件，
+  // 即 /mf/Xenova/whisper-tiny/...；禁用远程，避免在大陆网络去连 huggingface.co 而 Failed to fetch。
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/')
+  env.allowLocalModels = true
+  env.allowRemoteModels = false
+  env.localModelPath = `${base}mf/`
   // 自托管 WASM（import.meta.env.BASE_URL 默认为 '/'）。
   // 关键：ort 1.31 在 wasmPaths 为“字符串目录”时，主线程会硬编码 import
   // ort-wasm-simd-threaded.asyncify.mjs（proxy-worker 专用，其 wasm 26MB 超 EdgeOne 25MiB 限额）；
   // 改为显式 { mjs, wasm } 对象指向无 asyncify 的 plain 版（14MB），
   // 配合无跨域隔离时自动 numThreads=1、proxy=false，走主线程单线程 WASM。
-  const base = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/')
   const dir = `${base}whisper/`
   const wasm = env.backends.onnx.wasm
   if (!wasm) throw new Error('当前 Transformers.js 构建缺少 onnx.wasm 运行时配置')
@@ -69,6 +47,7 @@ async function configureEnv(onProgress?: (p: AsrProgress) => void): Promise<void
   // 无跨域隔离头时不用 worker 代理，避免 SAB 依赖，保证稳定回退单线程
   wasm.proxy = false
   wasm.numThreads = 1
+  onProgress?.({ phase: 'download', percent: 0, message: `正在从本站加载 ${MODEL_LABEL}…` })
   envConfigured = true
 }
 

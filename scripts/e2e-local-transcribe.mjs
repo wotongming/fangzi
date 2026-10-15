@@ -1,7 +1,7 @@
 /**
  * 004 离线语音转写：多端 E2E 验证 + 真实截图（档位：H，checkpoint）。
  * 关键路径（H 档必须实证）：浏览器内 transformers.js v4 + 自托管 /whisper ort1.31 WASM，
- *   从 huggingface.co 官方 CDN 下载 Xenova/whisper-tiny q8（hf-mirror 浏览器跨域不可用作兜底）（无 COOP/COEP，验证单线程回退），
+ *   模型同源自托管 /mf/Xenova/whisper-tiny q8（超 25MiB 的 decoder 切 .partN，SW sw-model-shards.js 透明合并；无 COOP/COEP 单线程 WASM），
  *   对真实英文 wav 解码→16k→转写，断言文本含 "dream"、时间戳分段、抽取纪要、SRT 导出。
  * 另覆盖：免费额度计量、历史落库、波形/播放器存在；平板/手机无横向溢出。
  * 麦克风录音在无头环境不模拟（postmortem 中如实列为人工复测项）。
@@ -40,22 +40,42 @@ const browser = await chromium.launch({
   args: ['--no-sandbox', '--disable-dev-shm-usage']
 })
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true })
-await ctx.route('**/sw.js', (r) => r.abort())
-await ctx.route('**/registerSW.js', (r) => r.abort())
+// 不禁用 SW：/mf 同源模型的分片合并依赖 Service Worker（sw-model-shards.js）
 const page = await ctx.newPage()
 const consoleErrors = []
-const netReqs = { whisperWasm: 0, modelHost: 0 }
+const netReqs = { whisperWasm: 0, mfPart: 0, mfFull: 0, remote: 0 }
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 240)) })
 page.on('pageerror', (e) => consoleErrors.push('pageerror: ' + e.message.slice(0, 240)))
 page.on('request', (r) => {
   const u = r.url()
   if (u.includes('/whisper/ort-wasm')) netReqs.whisperWasm++
-  if (u.includes('huggingface.co') || u.includes('hf-mirror.com') || u.includes('cdn.hf.co')) netReqs.modelHost++
+  if (u.includes('/mf/')) {
+    if (/\.part\d+/.test(u)) netReqs.mfPart++
+    else netReqs.mfFull++
+  }
+  if (u.includes('huggingface.co') || u.includes('hf-mirror.com') || u.includes('cdn.hf.co')) netReqs.remote++
 })
 
 let asrOk = false
 
-await check('打开工具，标题/SEO 正确，默认在转写 tab', async () => {
+async function ensureSwControlled() {
+  await page.evaluate(async () => {
+    if (!('serviceWorker' in navigator)) return
+    await navigator.serviceWorker.ready
+    if (!navigator.serviceWorker.controller) {
+      await new Promise((res) => {
+        navigator.serviceWorker.addEventListener('controllerchange', res, { once: true })
+        setTimeout(res, 5000)
+      })
+    }
+  })
+}
+
+await check('打开工具，标题/SEO 正确，默认在转写 tab（SW 已接管）', async () => {
+  await page.goto(BASE)
+  await page.waitForSelector('.lt h1')
+  // 首次进入等待 SW 安装并接管，再重载一次，确保 /mf 请求被分片合并层拦截
+  await ensureSwControlled()
   await page.goto(BASE)
   await page.waitForSelector('.lt h1')
   const title = await page.title()
@@ -196,10 +216,18 @@ await responsive({ width: 834, height: 1112 }, '平板', 'shot-03-tablet.png')
 await responsive({ width: 375, height: 812 }, '手机', 'shot-04-phone.png')
 await page.setViewportSize({ width: 1280, height: 800 })
 
-await check('网络：自托管 /whisper wasm 与模型 CDN（huggingface/镜像）均被请求', async () => {
+await check('网络：同源自托管 /whisper wasm + /mf 模型（SW 分片合并），零外部模型源', async () => {
   if (!(netReqs.whisperWasm > 0)) throw new Error('未请求自托管 whisper wasm')
-  if (!(netReqs.modelHost > 0)) throw new Error('未请求模型 CDN')
-  return `whisper wasm ${netReqs.whisperWasm} 次；模型源 ${netReqs.modelHost} 次`
+  if (!(netReqs.mfFull > 0)) throw new Error('未请求同源 /mf 模型文件')
+  if (netReqs.remote > 0) throw new Error('仍在请求外部模型源 huggingface/镜像：' + netReqs.remote + ' 次')
+  // SW 内部拉 .partN 对页面 request 事件不可见，直接校验合并产物：字节必须等于官方 decoder q8
+  const bytes = await page.evaluate(async () => {
+    const r = await fetch('/mf/Xenova/whisper-tiny/onnx/decoder_model_merged_quantized.onnx')
+    if (!r.ok) throw new Error('decoder 合并响应 ' + r.status)
+    return (await r.arrayBuffer()).byteLength
+  })
+  if (bytes !== 30727765) throw new Error('SW 分片合并字节不符：' + bytes + '（应为 30727765）')
+  return `wasm ${netReqs.whisperWasm}；/mf 文件 ${netReqs.mfFull}；合并 decoder ${bytes}B；外部源 ${netReqs.remote}`
 })
 
 await check('Console 无未捕获实质错误（忽略 SW/CORS 噪声）', async () => {

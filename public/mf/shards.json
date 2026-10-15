@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "shards": {
+    "/Xenova/whisper-tiny/onnx/decoder_model_merged_quantized.onnx": 3
+  }
+}
