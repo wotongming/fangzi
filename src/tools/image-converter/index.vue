@@ -28,6 +28,7 @@ import {
   type AccessSummary,
   type PurchasePath
 } from './lib/monetization'
+import EcomMode from './components/EcomMode.vue'
 
 useSeo({
   title: '图片处理工作台 - 本地AI超分/去背景/批量压缩',
@@ -52,6 +53,7 @@ onMounted(async () => {
   supportsWebp.value = canvas.toDataURL('image/webp').startsWith('data:image/webp')
 })
 
+const mode = ref<'general' | 'ecom'>('general')
 const tab = ref<'single' | 'batch'>('single')
 const buyingPath = ref<PurchasePath | null>(null)
 
@@ -416,15 +418,25 @@ function yuan(cents?: number): string {
       </p>
     </header>
 
-    <nav class="tabs">
+    <nav class="tabs mode-tabs">
+      <button :class="{ active: mode === 'general' }" @click="mode = 'general'">通用处理</button>
+      <button :class="{ active: mode === 'ecom' }" @click="mode = 'ecom'">
+        电商上新{{ summary.unlocked ? '' : '（🔒）' }}
+      </button>
+    </nav>
+
+    <nav v-if="mode === 'general'" class="tabs">
       <button :class="{ active: tab === 'single' }" @click="tab = 'single'">单张处理</button>
       <button :class="{ active: tab === 'batch' }" @click="tab = 'batch'">
         批量工具链{{ summary.unlocked ? '' : '（🔒）' }}
       </button>
     </nav>
 
+    <!-- ================= 电商上新 ================= -->
+    <EcomMode v-if="mode === 'ecom'" />
+
     <!-- ================= 单张处理 ================= -->
-    <section v-if="tab === 'single'" aria-label="单张处理">
+    <section v-if="mode === 'general' && tab === 'single'" aria-label="单张处理">
       <label class="picker card">
         <input type="file" accept="image/*" hidden @change="pick(($event.target as HTMLInputElement).files)" />
         <span v-if="file">已选择：{{ file.name }}（再次选择可换图）</span>
@@ -496,7 +508,7 @@ function yuan(cents?: number): string {
     </section>
 
     <!-- ================= 批量工具链 ================= -->
-    <section v-if="tab === 'batch'" aria-label="批量工具链">
+    <section v-if="mode === 'general' && tab === 'batch'" aria-label="批量工具链">
       <div class="card box">
         <h2>导入图片</h2>
         <div class="import-row">
@@ -653,6 +665,10 @@ function yuan(cents?: number): string {
 .tabs {
   display: flex;
   gap: 8px;
+}
+.mode-tabs {
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--line);
 }
 .tabs button {
   padding: 8px 18px;
