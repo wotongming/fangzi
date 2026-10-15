@@ -308,3 +308,14 @@ fangzi/
 - **数据与合规**：建模/预览/打包全部浏览器本地完成（fflate MIT，零新增依赖），sandboxed iframe srcdoc 预览零网络；导入模型对全部标识符与注释做安全归一化；产物零依赖、商用友好。
 - **计费**：免费增值（原生生成、实时预览、API 文档、custom-elements.json、单文件/最小包、本地最多 3 个组件）＋专业版买断 ¥49.90（Lit 生成、React/Vue wrapper、完整 npm 包、本地组件不限量）。
 - **位置**：`src/tools/wc-workbench/`，路由 `/#/t/wc-workbench`；文档见该目录 `docs/`（guide / postmortem / 五阶段文档 / 9 张真实界面截图）。
+
+## 本地知识库智能问答（local-knowledge-base · 2026-10-15）
+
+- **简介**：把合同、研报、笔记、CSV、网页等文档拖进浏览器本地建库提问——本地语义模型（bge-small-zh 量化版，约 24MB，onnxruntime-web WASM）＋关键词（BM25，中文一元/二元）RRF 混合检索，答案抽取原文高相关句并附 `[n]` 引用可点开核对，文档/向量/对话全程不出设备、模型缓存后可离线；大模型文件支持 hf-mirror / Hugging Face 多源故障切换与自带对象存储（Cloudflare R2、腾讯云 COS 公开桶 + CORS）。
+- **目标用户**：律师/法务、金融投研、医生/科研、政务与内网办公人员、个人知识管理重度用户。
+- **使用场景**：对涉密合同/判决书/尽调底稿/研报提问且不能上云、弱网或断网下检索资料、把多年笔记与资料建成本地可问答知识库、不想按席位/token 为云端 ChatPDF 类产品付费。
+- **解决痛点**：敏感文档上公有云有合规红线、云端文档问答持续收费、纯关键词搜索换个问法就找不到、境外模型源国内下载大文件不稳。
+- **关键词**：本地知识库、文档问答、本地 RAG、私有知识库、语义检索、向量检索、混合检索、BM25、RRF、bge、embedding、合同问答、研报问答、离线问答、数据不出端、IndexedDB、WebAssembly、hf-mirror、Cloudflare R2、知识管理。
+- **数据与合规**：解析/嵌入/存储全部浏览器本地（IndexedDB 三表 + Cache Storage 缓存模型）；模型 `bge-small-zh-v1.5`（MIT）、onnxruntime-web（MIT）均商用友好；零新增 npm 依赖，自实现 BERT WordPiece 分词；V1 支持 txt/md/csv/html（pdf.js/mammoth 列 V1.1），答案为抽取式不接生成式 LLM、零幻觉可溯源；模型文件运行时下载不占托管存储。
+- **计费**：免费增值（4 格式解析、本地 bge-small 语义模型 + 关键词混合检索、最多 20 个文档）＋专业版买断 ¥49.90（文档不限量、自定义模型源/自带对象存储 CDN）。
+- **位置**：`src/tools/local-knowledge-base/`，路由 `/#/t/local-knowledge-base`；文档见该目录 `docs/`（guide / postmortem / 五阶段文档 / 5 张 PC·平板·手机真实界面截图）。
