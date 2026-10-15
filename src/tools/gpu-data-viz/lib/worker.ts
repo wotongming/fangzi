@@ -183,10 +183,7 @@ self.onmessage = async function (e) {
           max: idx === xIdx ? xMax : idx === yIdx ? yMax : NaN
         }
       })
-      self.postMessage(
-        {
-          ok: true,
-          payload: {
+      var payload = {
             headers: h,
             columns: columns,
             xIdx: xIdx,
@@ -196,7 +193,11 @@ self.onmessage = async function (e) {
             truncated: total > n,
             sourceName: msg.sourceName,
             rawLines: rawLines
-          },
+          }
+      self.postMessage(
+        {
+          ok: true,
+          payload,
           xy: xy.buffer,
           rawX: outX.buffer,
           rawY: outY.buffer

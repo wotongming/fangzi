@@ -169,19 +169,18 @@ function buildCsvInWorker(
       worker.terminate()
       reject(new Error(e.message || 'Worker 载入失败'))
     }
-    worker.postMessage(
-      {
-        kind: 'buildCsv',
-        file: info.file,
-        sourceName: info.sourceName,
-        headers: info.headers,
-        types: info.types,
-        xIdx,
-        yIdx,
-        limit,
-        totalHint: Math.min(info.totalRows, limit)
-      },
-      info.file ? [info.file] : []
-    )
+    // File 通过结构化克隆传递，不能放入 transfer list（File 不是 Transferable）；
+    // headers/types 可能是 Vue reactive Proxy，postMessage 无法克隆，先解包为普通数组
+    worker.postMessage({
+      kind: 'buildCsv',
+      file: info.file,
+      sourceName: info.sourceName,
+      headers: Array.from(info.headers),
+      types: Array.from(info.types),
+      xIdx,
+      yIdx,
+      limit,
+      totalHint: Math.min(info.totalRows, limit)
+    })
   })
 }

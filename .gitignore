@@ -15,3 +15,4 @@ coverage/
 .env.*
 !.env.example
 tmp-test-img/
+tmp-test-data/
