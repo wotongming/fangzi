@@ -13,6 +13,7 @@ import { RouterLink, RouterView } from 'vue-router'
         <nav class="topnav">
           <RouterLink to="/">开方子</RouterLink>
           <RouterLink to="/browse">全部工具</RouterLink>
+          <RouterLink to="/help">使用帮助</RouterLink>
           <RouterLink to="/settings">设置</RouterLink>
         </nav>
       </div>

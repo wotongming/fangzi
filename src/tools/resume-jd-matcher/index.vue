@@ -294,7 +294,7 @@ onMounted(async () => {
       <p v-if="matchErr" class="err">{{ matchErr }}</p>
       <div v-if="!pro && used >= FREE_QUOTA && !result" class="gate">
         <p>本月免费匹配次数已用完。</p>
-        <button class="btn-primary" @click="buyPro">升级专业版 ¥49.90（买断·不限岗位）</button>
+        <button class="btn-primary" @click="buyPro">升级专业版 ¥29.90（买断·不限岗位）</button>
       </div>
 
       <div v-if="result" class="result">
@@ -334,7 +334,7 @@ onMounted(async () => {
           <h4>定向改写建议 <span class="muted small">仅基于你本人经历，可溯源、不虚构</span></h4>
           <div v-if="!suggestPro" class="gate inline">
             <span>可溯源改写建议为专业功能。</span>
-            <button class="btn-primary" @click="buyPro">升级 ¥49.90 买断</button>
+            <button class="btn-primary" @click="buyPro">升级 ¥29.90 买断</button>
           </div>
           <template v-else>
             <p v-if="!suggestions.length" class="muted small">没有发现“已具备但没写标准名”的技能；真正缺失的能力请据实补充，切勿虚构。</p>
@@ -358,7 +358,7 @@ onMounted(async () => {
       <h3>求职信草稿</h3>
       <div v-if="!coverPro" class="gate">
         <p>中英文求职信生成与导出为专业功能（纯模板 + 你的真实经历，无 AI 虚构）。</p>
-        <button class="btn-primary" @click="buyPro">升级专业版 ¥49.90（买断）</button>
+        <button class="btn-primary" @click="buyPro">升级专业版 ¥29.90（买断）</button>
       </div>
       <template v-else>
         <div class="row">
@@ -385,7 +385,7 @@ onMounted(async () => {
       <h3>投递看板</h3>
       <div v-if="!boardPro" class="gate">
         <p>本地投递看板（状态流转/跟进/CSV 导出）为专业功能。</p>
-        <button class="btn-primary" @click="buyPro">升级专业版 ¥49.90（买断）</button>
+        <button class="btn-primary" @click="buyPro">升级专业版 ¥29.90（买断）</button>
       </div>
       <template v-else>
         <div class="row">

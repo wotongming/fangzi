@@ -35,7 +35,7 @@ function buildUsagePlan(plan: BillingPlan): BillingPlan {
   return {
     mode: 'usage',
     currency: plan.currency ?? 'CNY',
-    pricePerUnitCents: plan.usagePack?.priceCentsPerUnit ?? 990,
+    pricePerUnitCents: plan.usagePack?.priceCentsPerUnit ?? 290,
     unit: plan.usagePack?.unit ?? '张',
     freeQuotaPerCycle: plan.usagePack?.freePerDay ?? 0,
     quotaCycle: 'day'

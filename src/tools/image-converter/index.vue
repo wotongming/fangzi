@@ -36,7 +36,7 @@ useSeo({
     '本地图片转换、压缩、批量工具链与 AI 增强（超分/去背景），全程本地处理不上传，支持 ZIP 批量导出。',
   type: 'SoftwareApplication',
   keywords: ['图片压缩', 'ai超分', '去背景', '抠图', '批量图片', '格式转换', '本地处理'],
-  jsonLd: { offers: { '@type': 'Offer', price: '29.9', priceCurrency: 'CNY' } }
+  jsonLd: { offers: { '@type': 'Offer', price: '19.9', priceCurrency: 'CNY' } }
 })
 
 const billing = useToolBilling('image-converter')

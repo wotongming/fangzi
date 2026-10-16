@@ -13,7 +13,7 @@ export const manifest: ToolManifest = {
   billing: {
     mode: 'freemium',
     currency: 'CNY',
-    priceCents: 990,
+    priceCents: 690,
     features: [
       { key: 'context-search', label: '划词右键搜索方子', free: true },
       { key: 'ai-explain', label: '划词 AI 解读', free: false }

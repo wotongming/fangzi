@@ -28,7 +28,7 @@ export const manifest: ToolManifest = {
   billing: {
     mode: 'freemium',
     currency: 'CNY',
-    priceCents: 1990,
+    priceCents: 1290,
     features: [
       { key: 'compare', label: '两种计税方式对比', free: true },
       { key: 'batch', label: '批量测算与结果导出', free: false }

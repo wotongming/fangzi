@@ -59,7 +59,7 @@
 ### 6. 免费版与专业版
 
 - 免费：原生生成、实时预览、API 文档、custom-elements.json、单文件与最小包、本地保存 3 个组件、模型导入导出。
-- 专业版（freemium 一次买断 **¥49.90**）：Lit 生成、React/Vue wrapper、完整 npm 包、本地组件不限数量。
+- 专业版（freemium 一次买断 **¥29.90**）：Lit 生成、React/Vue wrapper、完整 npm 包、本地组件不限数量。
 - 在右上角「升级专业版」按钮完成买断；未解锁时点击 Pro 产物会提示升级。下方截图为已解锁后 Lit 代码可见状态。
 
 ![专业版解锁后 Lit 代码可见](shots/shot-05-pro-unlocked.png)

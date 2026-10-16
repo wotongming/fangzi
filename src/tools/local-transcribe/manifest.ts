@@ -31,7 +31,7 @@ export const manifest: ToolManifest = {
   billing: {
     mode: 'freemium',
     currency: 'CNY',
-    priceCents: 4990,
+    priceCents: 2990,
     features: [
       { key: 'transcribe-60', label: '每月 60 分钟本地转写（Whisper tiny 多语模型）', free: true },
       { key: 'model-tiny', label: '本地 Whisper tiny 模型，首次下载后离线可用', free: true },

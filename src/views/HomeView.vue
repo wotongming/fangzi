@@ -21,6 +21,18 @@ const outcome = ref<SearchOutcome | null>(null)
 const feedbackOpen = ref(false)
 const samples = ref(pickRandomSamples(8))
 
+// 首次访问新手引导（本机记忆，关闭后不再出现）
+const MANUAL_SEEN_KEY = 'fz-manual-seen'
+const showManualHint = ref(localStorage.getItem(MANUAL_SEEN_KEY) !== '1')
+function dismissManualHint() {
+  showManualHint.value = false
+  try {
+    localStorage.setItem(MANUAL_SEEN_KEY, '1')
+  } catch {
+    /* 隐私模式等写入失败时仅本次隐藏 */
+  }
+}
+
 const favoriteTools = ref<RegisteredTool[]>([])
 function refreshFavorites() {
   favoriteTools.value = favoritesStore.ids
@@ -60,6 +72,15 @@ onMounted(() => {
 
 <template>
   <div class="container home">
+    <!-- 首次访问新手引导 -->
+    <div v-if="showManualHint && !hasSearched" class="manual-hint">
+      <RouterLink class="manual-hint-body" to="/help">
+        <span class="manual-hint-title">第一次用方子？先看新手使用指南</span>
+        <span class="manual-hint-desc">2 分钟学会安装到桌面、搜工具、看懂计费与隐私说明 →</span>
+      </RouterLink>
+      <button class="manual-hint-close" aria-label="关闭新手引导" @click="dismissManualHint">×</button>
+    </div>
+
     <!-- 搜索主区 -->
     <section class="hero" :class="{ compact: hasSearched }">
       <h1 v-if="!hasSearched" class="hero-title">说说你遇到的问题，给你开个小方子</h1>
@@ -158,6 +179,48 @@ onMounted(() => {
 .home {
   padding-top: 26px;
   padding-bottom: 50px;
+}
+.manual-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 auto 4px;
+  max-width: 680px;
+  background: var(--brand-soft);
+  border: 1px solid var(--brand);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.manual-hint-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  text-decoration: none !important;
+  color: var(--ink);
+}
+.manual-hint-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--brand-dark);
+}
+.manual-hint-desc {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+.manual-hint-close {
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 20px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.manual-hint-close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--ink);
 }
 .hero {
   text-align: center;

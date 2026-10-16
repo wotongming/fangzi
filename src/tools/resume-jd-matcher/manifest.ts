@@ -31,7 +31,7 @@ export const manifest: ToolManifest = {
   billing: {
     mode: 'freemium',
     currency: 'CNY',
-    priceCents: 4990,
+    priceCents: 2990,
     features: [
       { key: 'match-basic', label: '每月 5 个岗位：本地解析简历 + 关键词匹配分 + 硬门槛核对', free: true },
       { key: 'unlimited-match', label: '专业版：不限岗位数量，解锁技能/职责/资质三维诊断', free: false },

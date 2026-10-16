@@ -2,14 +2,14 @@
  * 用户需求反馈投递。
  * - 配置 VITE_FEEDBACK_ENDPOINT（指向 serverless 邮件函数）时：POST 到服务端，由服务端发邮件
  * - 未配置时：写入本地队列绝不丢失，返回 queued，部署时配置函数并调用 retryQueued() 补发
- * 收件人固定为 wotongming@163.com（在服务端函数中配置 / 兜底）。
+ * 收件人固定为 fangziasia@163.com（在服务端函数中配置 / 兜底）。
  */
 
 import type { FeedbackRequest } from './types'
 import { readJSON, writeJSON } from './storage'
 
 const QUEUE_KEY = 'fangzi:feedback-queue'
-const TARGET_EMAIL = 'wotongming@163.com'
+const TARGET_EMAIL = 'fangziasia@163.com'
 
 export interface FeedbackResult {
   delivered: boolean

@@ -29,15 +29,15 @@ export const manifest: ToolManifest = {
   billing: {
     mode: 'freemium',
     currency: 'CNY',
-    priceCents: 4990,
+    priceCents: 2990,
     features: [
       { key: 'basic', label: '≤50 万点 / 三种图型 / 缩放刷选 / PNG 截图', free: true },
       { key: 'full-data', label: '全量数据（>50 万点，百万级流畅渲染）', free: false },
       { key: 'export-report', label: '刷选结果 CSV 导出与分析报告', free: false },
       { key: 'embed', label: '嵌入式图表组件（Web Component）', free: false }
     ],
-    subscription: { priceCentsPerMonth: 1290, priceCentsPerYear: 11800 },
-    usagePack: { priceCentsPerUnit: 199, unit: '次', freePerDay: 2 },
+    subscription: { priceCentsPerMonth: 890, priceCentsPerYear: 8800 },
+    usagePack: { priceCentsPerUnit: 129, unit: '次', freePerDay: 2 },
     platformSplit: {
       enabled: true,
       partnerRatePct: 20,

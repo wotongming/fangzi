@@ -234,7 +234,7 @@ onBeforeUnmount(teardownRun)
       <!-- 选中 Pro 动作但未解锁 -->
       <div v-if="!proEx && !EXERCISE_META.find((e) => e.id === exerciseId)?.free" class="gate">
         <p>「{{ exerciseName(exerciseId) }}」为专业动作。</p>
-        <button class="btn-primary" @click="buyPro">升级专业版 ¥49.90（买断）</button>
+        <button class="btn-primary" @click="buyPro">升级专业版 ¥29.90（买断）</button>
       </div>
 
       <template v-else>
@@ -264,7 +264,7 @@ onBeforeUnmount(teardownRun)
       <h3>周期训练计划</h3>
       <div v-if="!planPro" class="gate">
         <p>按目标与器械生成每周课表是专业功能。</p>
-        <button class="btn-primary" @click="buyPro">升级专业版 ¥49.90（买断）</button>
+        <button class="btn-primary" @click="buyPro">升级专业版 ¥29.90（买断）</button>
       </div>
       <template v-else>
         <div class="controls">
@@ -333,7 +333,7 @@ onBeforeUnmount(teardownRun)
         <li>周期训练计划 <span :class="planPro ? 'ok' : 'lock'">{{ planPro ? '已解锁' : 'Pro' }}</span></li>
         <li>历史趋势图 <span :class="trendPro ? 'ok' : 'lock'">{{ trendPro ? '已解锁' : 'Pro' }}</span></li>
       </ul>
-      <button v-if="!proEx" class="btn-primary" @click="buyPro">升级专业版 ¥49.90（一次买断）</button>
+      <button v-if="!proEx" class="btn-primary" @click="buyPro">升级专业版 ¥29.90（一次买断）</button>
       <p class="muted small">建议在光线充足处侧对摄像头、露出全身关节；判定为端侧辅助参考，疼痛请停止并咨询专业教练/医生。</p>
     </section>
   </div>

@@ -20,7 +20,7 @@ useSeo({
     '可视化配置报名表单、满意度反馈、星级评分、价格计算器、活动倒计时，实时预览并一键导出 Shadow DOM 样式隔离的 Web Component 单文件，复制两段代码嵌入任意站点（React/Vue/WordPress），数据本地处理。',
   type: 'SoftwareApplication',
   keywords: manifest.keywords,
-  jsonLd: { offers: { '@type': 'Offer', price: '39.9', priceCurrency: 'CNY' } }
+  jsonLd: { offers: { '@type': 'Offer', price: '24.9', priceCurrency: 'CNY' } }
 })
 
 const billing = useToolBilling(manifest.id)

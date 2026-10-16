@@ -23,7 +23,7 @@ useSeo({
     '浏览器内 WebGPU/WebGL 加速的百万级数据点可视化：拖入 CSV/JSON 即绘散点密度、热力、折线图，缩放刷选、导出报告，数据全程本地不上传。',
   type: 'SoftwareApplication',
   keywords: ['webgpu', '大数据可视化', '百万点', 'csv 图表', '散点图', '热力图', '本地分析'],
-  jsonLd: { offers: { '@type': 'Offer', price: '49.9', priceCurrency: 'CNY' } }
+  jsonLd: { offers: { '@type': 'Offer', price: '29.9', priceCurrency: 'CNY' } }
 })
 
 const billing = useToolBilling('gpu-data-viz')

@@ -43,7 +43,7 @@ export const manifest: ToolManifest = {
   billing: {
     mode: 'freemium',
     currency: 'CNY',
-    priceCents: 2990,
+    priceCents: 1990,
     features: [
       { key: 'basic', label: '记账、分类与看板', free: true },
       { key: 'budget', label: '预算与超支预警', free: true },

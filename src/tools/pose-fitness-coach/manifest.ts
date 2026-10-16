@@ -30,7 +30,7 @@ export const manifest: ToolManifest = {
   billing: {
     mode: 'freemium',
     currency: 'CNY',
-    priceCents: 4990,
+    priceCents: 2990,
     features: [
       { key: 'ex-squat', label: '深蹲：摄像头自动计数 + 基础提示', free: true },
       { key: 'ex-pushup', label: '俯卧撑：摄像头自动计数 + 基础提示', free: true },

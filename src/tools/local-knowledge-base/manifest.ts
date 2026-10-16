@@ -30,7 +30,7 @@ export const manifest: ToolManifest = {
   billing: {
     mode: 'freemium',
     currency: 'CNY',
-    priceCents: 4990,
+    priceCents: 2990,
     features: [
       { key: 'formats-basic', label: 'txt / Markdown / CSV / HTML 解析、智能分块与引用溯源', free: true },
       { key: 'semantic-small', label: '本地语义模型（bge-small，约 24MB）+ 关键词混合检索', free: true },

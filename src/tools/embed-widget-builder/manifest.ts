@@ -30,7 +30,7 @@ export const manifest: ToolManifest = {
   billing: {
     mode: 'freemium',
     currency: 'CNY',
-    priceCents: 3990,
+    priceCents: 2490,
     features: [
       { key: 'basic-templates', label: '报名/联系表单、满意度反馈、星级评分 3 类基础模板', free: true },
       { key: 'instances-3', label: '本地保存最多 3 个组件、实时预览、导出单文件脚本', free: true },

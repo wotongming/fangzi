@@ -31,15 +31,15 @@ export const manifest: ToolManifest = {
   billing: {
     mode: 'buyout',
     currency: 'CNY',
-    priceCents: 2990,
+    priceCents: 1990,
     features: [
       { key: 'convert', label: '格式转换与压缩', free: true },
       { key: 'batch', label: '批量处理与工具链', free: false },
       { key: 'ecom', label: '电商上新（多平台规格/换底/水印/资料包）', free: false },
       { key: 'ai', label: 'AI 增强（超分/去背景）', free: false }
     ],
-    subscription: { priceCentsPerMonth: 990, priceCentsPerYear: 8900 },
-    usagePack: { priceCentsPerUnit: 990, unit: '张', freePerDay: 3 },
+    subscription: { priceCentsPerMonth: 690, priceCentsPerYear: 6900 },
+    usagePack: { priceCentsPerUnit: 290, unit: '张', freePerDay: 3 },
     platformSplit: {
       enabled: true,
       partnerRatePct: 20,

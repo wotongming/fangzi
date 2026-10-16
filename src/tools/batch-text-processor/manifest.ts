@@ -13,7 +13,7 @@ export const manifest: ToolManifest = {
   billing: {
     mode: 'usage',
     currency: 'CNY',
-    pricePerUnitCents: 20,
+    pricePerUnitCents: 10,
     unit: '次',
     freeQuotaPerCycle: 20,
     quotaCycle: 'month'

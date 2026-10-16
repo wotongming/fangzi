@@ -1,9 +1,45 @@
 /**
  * 极简、安全的 Markdown 渲染器（用于工具用户指导 / 插件手册）。
- * 支持：#~#### 标题、有序/无序列表、围栏代码块、行内代码、加粗、链接、引用、分隔线、段落。
+ * 支持：#~#### 标题、有序/无序列表、GFM 表格、围栏代码块、行内代码、加粗、链接、引用、分隔线、段落。
  * 安全策略：所有文本先 HTML 转义；链接仅允许 http/https/相对路径并强制 noopener。
  */
 import { escapeHtml } from './search/highlight'
+
+/** 是否为 GFM 管道表格行（以 | 开头且非代码块） */
+function isPipeRow(line: string): boolean {
+  const t = line.trim()
+  return t.startsWith('|') && t.indexOf('|', 1) !== -1
+}
+
+/** 表头与表体之间的分隔行，如 |---|:--:|--:| */
+function isTableSep(line: string): boolean {
+  const t = line.trim().replace(/^\|/, '').replace(/\|$/, '')
+  if (!t.includes('|') && !/^:?-{2,}:?$/.test(t)) return false
+  return t.split('|').every((c) => /^\s*:?-{2,}:?\s*$/.test(c))
+}
+
+/** 拆分一行表格单元格，去掉首尾管道与空白 */
+function splitCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((c) => c.trim())
+}
+
+function renderTable(header: string[], body: string[][]): string {
+  const th = header.map((h) => `<th>${inline(h)}</th>`).join('')
+  const rows = body
+    .map((r) => {
+      const tds = header
+        .map((_, c) => `<td>${inline(r[c] ?? '')}</td>`)
+        .join('')
+      return `<tr>${tds}</tr>`
+    })
+    .join('')
+  return `<table><thead><tr>${th}</tr></thead>${rows ? `<tbody>${rows}</tbody>` : ''}</table>`
+}
 
 function inline(text: string): string {
   let s = escapeHtml(text)
@@ -76,6 +112,20 @@ export function renderMarkdown(md: string): string {
       closeList()
       html.push('<hr />')
       i++
+      continue
+    }
+
+    // GFM 表格：当前行为管道行、下一行为分隔行
+    if (isPipeRow(line) && lines[i + 1] && isTableSep(lines[i + 1]!)) {
+      closeList()
+      const header = splitCells(line)
+      i += 2
+      const body: string[][] = []
+      while (i < lines.length && isPipeRow(lines[i]!)) {
+        body.push(splitCells(lines[i]!))
+        i++
+      }
+      html.push(renderTable(header, body))
       continue
     }
 

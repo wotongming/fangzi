@@ -1,5 +1,5 @@
 /**
- * embed-widget-builder 变现层（主方案：freemium + 买断专业版 ¥39.90）。
+ * embed-widget-builder 变现层（主方案：freemium + 买断专业版 ¥24.90）。
  * 免费：3 类基础模板、最多 3 个本地组件、实时预览、导出脚本、保留角标。
  * 专业版（一次买断 freemium-pro）：进阶模板、不限组件、去角标/品牌定制、CSV 数据导出。
  */

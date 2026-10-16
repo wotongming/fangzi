@@ -31,7 +31,7 @@ export const manifest: ToolManifest = {
   billing: {
     mode: 'freemium',
     currency: 'CNY',
-    priceCents: 4990,
+    priceCents: 2990,
     features: [
       { key: 'native-gen', label: '原生 Web Component 生成、实时预览、属性/事件/插槽/主题建模', free: true },
       { key: 'docs-manifest', label: 'API 文档、交互演示页、custom-elements.json、单文件 / 最小可用包导出', free: true },
