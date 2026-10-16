@@ -330,3 +330,14 @@ fangzi/
 - **数据与合规**：解码/推理/存储全部浏览器本地（IndexedDB 仅存文稿不存音频，Cache Storage 缓存模型）；Whisper 权重（MIT）、@huggingface/transformers（Apache-2.0）、onnxruntime-web（MIT）均商用友好；**模型与推理内核全部同源自托管**（`/mf/` + `/whisper/`，不依赖 huggingface.co 等境外源，大陆 4G/WiFi 直连），decoder q8 30,727,765B 超 25MiB 切为三片由 Service Worker（`sw-model-shards.js` 按 `shards.json`）透明合并，推理内核用 14MB plain WASM。
 - **计费**：免费增值（每自然月 60 分钟、tiny 多语模型、麦克风+常见音频导入、TXT/MD/SRT 导出、本地历史与抽取式纪要）＋专业版买断 ¥49.90（转写时长不限）。
 - **位置**：`src/tools/local-transcribe/`，路由 `/#/t/local-transcribe`；文档见该目录 `docs/`（guide / postmortem / 五阶段文档 / 4 张 PC·平板·手机真实界面截图）。V1 为 H 档 checkpoint，whisper tiny 中文准确率有限，base/small 模型、生成式纪要、说话人分离、视频提音轨列 V1.1。
+
+## 居家健身摄像头本地纠错教练（pose-fitness-coach · 2026-10-16）
+
+- **简介**：打开摄像头即可在浏览器本机端侧识别深蹲、俯卧撑、弓步蹲、臀桥、肩推、平板支撑六类动作，基于 MediaPipe PoseLandmarker（33 点关键点）实时自动计数/计时、用关节角与姿态偏移判定动作质量并以文字+语音即时纠错打分，附带按目标/器械/频次生成的周期训练计划与本机历史记录、趋势折线；画面不录制不上传，模型同源自托管、首载后离线可用，GPU 不可用自动回退 CPU。
+- **目标用户**：居家自重健身者、健身小白、想纠正动作避免受伤的人、出差/租房无健身房人群、跟练 App 付费会员的替代人群。
+- **使用场景**：在家对着手机做深蹲/俯卧撑想要自动计数与动作纠错、无教练在场判断蹲得够不够深/是否塌腰膝内扣、按周期课表训练并追踪进步、隐私敏感不愿把健身视频上传云端、弱网离线环境跟练。
+- **解决痛点**：请私教贵、独自训练无人纠正易受伤且动作不到位没效果、云端姿态分析需上传视频有隐私顾虑且依赖网络、普通计数工具只数数不评估动作质量。
+- **关键词**：居家健身、AI健身、姿态识别、动作纠错、深蹲计数、俯卧撑、平板支撑、健身教练、mediapipe、pose、端侧 AI、本地推理、摄像头健身、自动计数、动作评分、训练计划、IndexedDB、数据不出端。
+- **数据与合规**：摄像头画面仅实时分析，不录制/不存储/不上传；训练记录仅存本机 IndexedDB（`fz-pose-coach-v1`）。@mediapipe/tasks-vision 1.1.1、vision wasm、pose_landmarker_lite 模型均为 **Apache-2.0 可商用**；模型与 wasm **同源自托管**于 `/mf/mediapipe/`（不依赖 googleapis，大陆直连），wasm 13.52MB、模型 5.78MB，均在 EdgeOne 25MiB 单文件限额内。
+- **计费**：免费增值（深蹲/俯卧撑自动计数 + 基础幅度提示）＋专业版买断 ¥49.90（弓步蹲/臀桥/肩推/平板、实时纠错与动作评分、周期训练计划、历史趋势图）。
+- **位置**：`src/tools/pose-fitness-coach/`，路由 `/#/t/pose-fitness-coach`；文档见该目录 `docs/`（guide / postmortem / 五阶段文档 / 5 张 PC·平板·手机真实界面截图）。H 档，六动作 FSM 与计数/落库/计费链路经 16 例单测与 13 项无头 E2E 验证；真机摄像头/GPU/语音专项见 guide 上线前复测清单。
