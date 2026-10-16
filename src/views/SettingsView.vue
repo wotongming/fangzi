@@ -3,7 +3,12 @@ import { computed, ref } from 'vue'
 import { useSettingsStore } from '../stores/settings'
 import { useToolsStore } from '../stores/tools'
 import { billingProvider } from '../core/billing'
-import { getQueuedFeedbackCount, retryQueuedFeedback, FEEDBACK_TARGET_EMAIL } from '../core/feedback'
+import {
+  getQueuedFeedbackCount,
+  retryQueuedFeedback,
+  openFeedbackMail,
+  FEEDBACK_TARGET_EMAIL
+} from '../core/feedback'
 
 const settings = useSettingsStore()
 const toolsStore = useToolsStore()
@@ -120,10 +125,16 @@ const endpointConfigured = computed(() => Boolean(import.meta.env.VITE_FEEDBACK_
     </section>
 
     <section class="card box">
-      <h2>需求反馈投递</h2>
+      <h2>意见反馈</h2>
       <p class="muted">
-        无搜索结果时提交的需求会发往 <code>{{ FEEDBACK_TARGET_EMAIL }}</code>。
-        当前{{ endpointConfigured ? '已配置服务端投递地址' : '未配置服务端投递地址，需求先在本机排队，配置后自动补发' }}；
+        推荐直接用邮件联系我们，会自动填好收件人 <code>{{ FEEDBACK_TARGET_EMAIL }}</code> 与正文模板：
+      </p>
+      <div class="actions">
+        <button class="btn btn-primary" @click="openFeedbackMail('new')">✉️ 提新需求</button>
+        <button class="btn" @click="openFeedbackMail('improve')">🔧 优化已有工具</button>
+      </div>
+      <p class="muted" style="margin-top: 12px;">
+        此前在无搜索结果时用网页表单提交的需求{{ endpointConfigured ? '会即时发送' : '先在本机排队，配置投递地址后自动补发' }}，
         本机待发队列：<b>{{ queued }}</b> 条。
       </p>
       <div class="actions">

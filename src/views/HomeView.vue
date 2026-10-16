@@ -124,7 +124,7 @@ onMounted(() => {
         <button class="btn btn-primary feedback-btn" @click="feedbackOpen = true">
           没找到想要的工具？告诉我们你需要什么，我们会考虑开发
         </button>
-        <p class="faint small">无需填写邮箱，一句话描述问题即可。</p>
+        <p class="faint small">点击后会打开邮件并自动填好收件人与模板，按提示补充几句即可；也可改用网页表单提交。</p>
       </div>
     </section>
 

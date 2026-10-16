@@ -21,7 +21,14 @@ export const SAMPLE_QUERIES: SampleQuery[] = [
   { text: '想生成一个又长又安全的随机密码', expectToolId: 'password-generator' },
   { text: '照片太大，怎么在本地转成 WebP 压缩？', expectToolId: 'image-converter' },
   { text: '网页上看到的问题想右键直接在方子里搜', expectToolId: 'fangzi-companion' },
-  { text: '微信支付宝花的钱太散，想记个家庭账本看看钱花哪了', expectToolId: 'household-finance' }
+  { text: '微信支付宝花的钱太散，想记个家庭账本看看钱花哪了', expectToolId: 'household-finance' },
+  { text: '上百万行 CSV 拖进浏览器，想用 GPU 流畅画百万点散点热力图不卡死', expectToolId: 'gpu-data-viz' },
+  { text: '想无代码做报名表单、倒计时这类可嵌入小组件，复制一段代码就放到网站', expectToolId: 'embed-widget-builder' },
+  { text: '写一次 Web Component 组件库，React、Vue、Angular 都能复用怎么做', expectToolId: 'wc-workbench' },
+  { text: '合同研报想在本机建知识库直接问答，离线文档检索不泄密', expectToolId: 'local-knowledge-base' },
+  { text: '开完会想把录音离线转成文字稿、导出 SRT 字幕并整理会议纪要', expectToolId: 'local-transcribe' },
+  { text: '在家练深蹲俯卧撑，想用摄像头自动计数并纠正不标准动作', expectToolId: 'pose-fitness-coach' },
+  { text: '投简历前对照 JD 算个匹配分，看看还缺哪些技能', expectToolId: 'resume-jd-matcher' }
 ]
 
 /** 随机抽取 n 条（使用 Fisher–Yates 部分洗牌，不修改原数组） */

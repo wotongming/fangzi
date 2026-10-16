@@ -154,6 +154,92 @@ for (const [name, w, h] of [['平板', 834, 1112], ['手机', 375, 812]]) {
   await ctx.close()
 }
 
+// ---- G：手册目录页内锚点跳转 + 反馈邮件弹窗（PC） ----
+{
+  const ctx = await newCtx(browser, { width: 1280, height: 800 })
+  const page = await ctx.newPage()
+  await page.goto(ORIGIN + '/#/help', { waitUntil: 'networkidle' })
+  await page.waitForSelector('.markdown-body table', { timeout: 10000 })
+
+  const waitScrollStable = async () => {
+    await page.evaluate(async () => {
+      let last = -1
+      for (let i = 0; i < 50; i++) {
+        const y = window.scrollY
+        if (y === last) break
+        last = y
+        await new Promise((r) => setTimeout(r, 80))
+      }
+    })
+  }
+  const settledTop = async (sel) =>
+    page.locator(sel).evaluate((el) => el.getBoundingClientRect().top)
+
+  await check('G1 目录锚点点击：路由仍在 /help（不跳主页）且向文末滚动', async () => {
+    const targetH2 = '.markdown-body h2[id="11-常见问题-faq"]'
+    const before = await page.evaluate(() => window.scrollY)
+    await page.locator('.markdown-body a.md-anchor[href="#11-常见问题-faq"]').click()
+    await waitScrollStable()
+    const hash = await page.evaluate(() => location.hash)
+    const after = await page.evaluate(() => window.scrollY)
+    const atBottom = await page.evaluate(
+      () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 3
+    )
+    const top = await settledTop(targetH2)
+    if (hash !== '#/help') throw new Error(`路由被改：${hash}`)
+    if (!(after > before)) throw new Error('未发生页内滚动')
+    // 文末最后一节无法贴到吸顶栏下方，滚动到底即正确
+    if (!atBottom && (top > 120 || top < -10)) throw new Error(`未到位 top=${Math.round(top)} atBottom=${atBottom}`)
+    return `hash=${hash} scrollY ${before}→${after} atBottom=${atBottom}`
+  })
+  await check('G2 再点靠前目录项（#6）可回滚到吸顶栏下方，标题带锚点 id', async () => {
+    const targetH2 = '.markdown-body h2[id="6-工具计费与购买"]'
+    const hasId = await page.locator(targetH2).count()
+    if (!hasId) throw new Error('目标标题无 id')
+    await page.locator('.markdown-body a.md-anchor[href="#6-工具计费与购买"]').click()
+    await waitScrollStable()
+    const hash = await page.evaluate(() => location.hash)
+    const top = await settledTop(targetH2)
+    if (hash !== '#/help') throw new Error(`路由被改：${hash}`)
+    if (top > 120 || top < -10) throw new Error(`未贴到顶栏下方 top=${Math.round(top)}`)
+    return `top=${Math.round(top)}`
+  })
+
+  // 反馈：零结果 → 打开弹窗 → 邮件主路径
+  await page.goto(ORIGIN + '/#/', { waitUntil: 'networkidle' })
+  await page.fill('.search-input', 'qzkwxj 7733190')
+  await page.click('button.prescribe')
+  await page.waitForSelector('.empty .feedback-btn', { timeout: 10000 })
+  await page.click('.feedback-btn')
+  await page.waitForSelector('.dialog', { timeout: 8000 })
+
+  await check('G3 反馈弹窗默认邮件主路径、收件人正确、含两类入口', async () => {
+    const title = await page.locator('.dialog h2').innerText()
+    if (!title.includes('反馈')) throw new Error('标题不符')
+    const body = await page.locator('.dialog').innerText()
+    if (!body.includes('fangziasia@163.com')) throw new Error('收件人缺失')
+    const tabs = await page.locator('.dialog .kind').count()
+    if (tabs !== 2) throw new Error(`tabs=${tabs}`)
+    const btn = await page.locator('.dialog button.big').innerText()
+    if (!btn.includes('打开邮件')) throw new Error('主按钮不是打开邮件')
+    return 'ok'
+  })
+  await check('G4 切到「优化旧工具」后主题/按钮文案随之切换', async () => {
+    await page.locator('.dialog .kind', { hasText: '优化旧工具' }).click()
+    const body = await page.locator('.dialog').innerText()
+    if (!body.includes('优化建议')) throw new Error('主题未切换为优化建议')
+    const btn = await page.locator('.dialog button.big').innerText()
+    if (!btn.includes('优化建议')) throw new Error('按钮未切换')
+    return 'ok'
+  })
+  await check('G5 提供「改用网页表单」备选入口', async () => {
+    await page.locator('.dialog .link-btn', { hasText: '网页表单' }).click()
+    await page.waitForSelector('.dialog textarea', { timeout: 5000 })
+    return 'ok'
+  })
+  await ctx.close()
+}
+
 await browser.close()
 
 const pass = results.filter((r) => r.ok).length

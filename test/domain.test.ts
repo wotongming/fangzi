@@ -77,10 +77,19 @@ test('MD5 标准向量', () => {
 
 test('Markdown 渲染：转义危险内容，链接安全', () => {
   const html = renderMarkdown('# 标题\n\n<script>alert(1)</script>\n\n[方子](https://a.com)')
-  assert.ok(html.includes('<h1>标题</h1>'))
+  // 标题生成与 GitCode/GitHub 一致的锚点 id，供目录页内跳转
+  assert.ok(html.includes('<h1 id="标题">标题</h1>'))
   assert.ok(html.includes('&lt;script&gt;'))
   assert.ok(html.includes('target="_blank"'))
   assert.ok(!html.includes('javascript:'))
+})
+
+test('Markdown 渲染：页内锚点不带 target，slug 与 GitCode 规则一致', () => {
+  const html = renderMarkdown('## 2. 打开与安装（PWA）\n\n[跳转](#2-打开与安装pwa)')
+  assert.ok(html.includes('<h2 id="2-打开与安装pwa">'))
+  assert.ok(html.includes('<a href="#2-打开与安装pwa" class="md-anchor">跳转</a>'))
+  // 页内锚点绝不能新开标签页（否则在 hash 路由下会跳走）
+  assert.ok(!html.includes('href="#2-打开与安装pwa" target'))
 })
 
 test('cosine：正交为 0，同向为 1', () => {

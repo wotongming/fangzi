@@ -95,3 +95,50 @@ export async function retryQueuedFeedback(): Promise<{ sent: number; failed: num
 }
 
 export const FEEDBACK_TARGET_EMAIL = TARGET_EMAIL
+
+/** 反馈类型：提新需求 / 优化已有工具 */
+export type FeedbackKind = 'new' | 'improve'
+
+/**
+ * 构造「系统邮件」反馈链接：自动填收件人、主题与正文模板。
+ * 用户点击后由浏览器调起本机默认邮件 App（mailto:），内容不出设备、直达团队邮箱。
+ */
+export function buildFeedbackMailto(kind: FeedbackKind, query?: string): string {
+  const subject =
+    kind === 'new' ? '【方子 · 新需求】我希望方子增加：' : '【方子 · 优化建议】关于工具的改进'
+  const lines: string[] = []
+  if (kind === 'new') {
+    lines.push('你好方子团队：')
+    lines.push('')
+    lines.push('我希望方子能新增一个工具 / 功能。')
+    lines.push('')
+    lines.push('1. 使用场景（我在什么情况下需要）：')
+    lines.push('')
+    lines.push('2. 现在遇到的麻烦 / 现有方案的不足：')
+    lines.push('')
+    lines.push('3. 我希望它能做到：')
+    lines.push('')
+    lines.push('（可选）我的设备与浏览器：')
+    if (query?.trim()) lines.push('', `（我刚才在方子搜索：${query.trim()}）`)
+  } else {
+    lines.push('你好方子团队：')
+    lines.push('')
+    lines.push('关于「____________」工具，我有一些优化建议。')
+    lines.push('')
+    lines.push('1. 我在做什么操作时遇到：')
+    lines.push('')
+    lines.push('2. 期望的表现：')
+    lines.push('')
+    lines.push('3. 实际的表现（可附截图 / 录屏）：')
+    lines.push('')
+    lines.push('（可选）我的设备与浏览器：')
+  }
+  lines.push('')
+  const body = lines.join('\n')
+  return `mailto:${TARGET_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+}
+
+/** 打开系统邮件客户端发送反馈 */
+export function openFeedbackMail(kind: FeedbackKind, query?: string): void {
+  window.location.href = buildFeedbackMailto(kind, query)
+}

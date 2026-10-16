@@ -49,12 +49,49 @@ function inline(text: string): string {
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   // 链接 [text](url)
   s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label, url) => {
-    if (/^(https?:\/\/|\/|\.\/|\.\.\/|#)/.test(url)) {
+    // 页内锚点：不加 target=_blank，交由点击处理器滚动，避免在 hash 路由下跳走
+    if (url.startsWith('#')) {
+      return `<a href="${url}" class="md-anchor">${label}</a>`
+    }
+    if (/^(https?:\/\/|\/|\.\/|\.\.\/)/.test(url)) {
       return `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`
     }
     return label
   })
   return s
+}
+
+/**
+ * GitHub / GitCode 风格的标题锚点 slug：转小写、空白转连字符、去除标点
+ * （保留字母数字（含中文）、下划线、连字符）。让仓库 Markdown 的目录
+ * `[x](#锚点)` 与本渲染器生成的标题 id 一致，GitCode 网页与方子 PWA 内都能跳转。
+ */
+export function slugifyHeading(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{N}\-_\s]/gu, '')
+    .replace(/\s+/g, '-')
+}
+
+/**
+ * 页内锚点点击处理（hash 路由下必须拦截，否则会改 location.hash 被路由当新地址）。
+ * 用法：`<article class="markdown-body" @click="handleMarkdownAnchorClick">`。
+ */
+export function handleMarkdownAnchorClick(e: MouseEvent): boolean {
+  const anchor = (e.target as HTMLElement | null)?.closest?.('a')
+  if (!anchor) return false
+  const href = anchor.getAttribute('href') || ''
+  if (!href.startsWith('#') || href.length <= 1) return false
+  const id = decodeURIComponent(href.slice(1))
+  const container = anchor.closest('.markdown-body')
+  const el =
+    (container?.querySelector(`[id="${CSS.escape(id)}"]`) as HTMLElement | null) ??
+    document.getElementById(id)
+  if (!el) return false
+  e.preventDefault()
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  return true
 }
 
 export function renderMarkdown(md: string): string {
@@ -103,7 +140,12 @@ export function renderMarkdown(md: string): string {
     if (heading) {
       closeList()
       const level = heading[1]!.length
-      html.push(`<h${level}>${inline(heading[2]!)}</h${level}>`)
+      const raw = heading[2]!
+        .replace(/`/g, '')
+        .replace(/\*\*/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      const id = slugifyHeading(raw)
+      html.push(`<h${level}${id ? ` id="${id}"` : ''}>${inline(heading[2]!)}</h${level}>`)
       i++
       continue
     }
