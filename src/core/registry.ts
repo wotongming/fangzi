@@ -28,6 +28,35 @@ const guideRaw = import.meta.glob<string>('../tools/*/guide.md', {
   query: '?raw',
   import: 'default'
 })
+// 回退：pipeline 工具的使用指导以 docs/guide_*.md 形式归档。root guide.md 优先；
+// 若缺失则取该工具 docs/ 下第一份 guide 作为指导正文（截图为源码文档、不随站发布，需剥离图片引用避免裂图）。
+const docsGuideRaw = import.meta.glob<string>('../tools/*/docs/guide_*.md', {
+  eager: true,
+  query: '?raw',
+  import: 'default'
+})
+
+function stripMdImages(md: string): string {
+  return md
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/<img\b[^>]*>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function resolveGuide(slug: string): string | null {
+  const root = guideRaw[`../tools/${slug}/guide.md`]
+  if (root && root.trim()) return root
+  const prefix = `../tools/${slug}/docs/`
+  const key = Object.keys(docsGuideRaw)
+    .filter((p) => p.startsWith(prefix))
+    .sort()[0]
+  if (key) {
+    const md = docsGuideRaw[key]
+    if (md && md.trim()) return stripMdImages(md)
+  }
+  return null
+}
 
 export interface RegisteredTool {
   manifest: ToolManifest
@@ -86,12 +115,11 @@ function buildRegistry(): RegisteredTool[] {
     const slug = slugFromPath(path)
     const manifest = mod.manifest
     const componentPath = `../tools/${slug}/index.vue`
-    const guidePath = `../tools/${slug}/guide.md`
     const rawLoader = componentLoaders[componentPath]
     const tool: RegisteredTool = {
       manifest,
       loadComponent: rawLoader ? () => rawLoader().then((c) => (c as { default: Component }).default) : null,
-      guide: guideRaw[guidePath] ?? null
+      guide: resolveGuide(slug)
     }
     validate(tool, slug)
     tools.push(tool)

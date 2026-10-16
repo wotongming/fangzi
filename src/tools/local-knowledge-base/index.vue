@@ -68,6 +68,8 @@ async function onFiles(e: Event) {
     return
   }
   busy.value = true
+  // 本批次中语义模型一旦失败，后续文件直接走关键词索引，避免每个文件都重试下载大模型
+  let semanticFailed = false
   try {
     for (const file of files) {
       if (!pro.value && docs.value.length >= FREE_DOC_LIMIT) {
@@ -81,24 +83,28 @@ async function onFiles(e: Event) {
       progressText.value = `正在导入 ${file.name}`
       progressPct.value = 0
       const text = await file.text()
-        const { degraded } = await engine.ingestFile({ name: file.name, text }, useSemantic.value, (p) => {
-          progressText.value = `${file.name} · ${p.message}`
-          if (p.embed) {
-            if (p.embed.phase === 'download' && p.embed.total) {
-              progressPct.value = Math.round((p.embed.received / p.embed.total) * 60)
-            } else if (p.embed.phase === 'init') {
-              progressPct.value = 65
-            } else if (p.embed.phase === 'embed' && p.embed.count) {
-              progressPct.value = 70 + Math.round((p.embed.done / p.embed.count) * 30)
-            }
-          } else {
-            progressPct.value = Math.min(96, progressPct.value + 8)
+      const wantSemantic = useSemantic.value && !semanticFailed
+      const { degraded } = await engine.ingestFile({ name: file.name, text }, wantSemantic, (p) => {
+        progressText.value = `${file.name} · ${p.message}`
+        if (p.embed) {
+          if (p.embed.phase === 'download' && p.embed.total) {
+            progressPct.value = Math.round((p.embed.received / p.embed.total) * 60)
+          } else if (p.embed.phase === 'init') {
+            progressPct.value = 65
+          } else if (p.embed.phase === 'embed' && p.embed.count) {
+            progressPct.value = 70 + Math.round((p.embed.done / p.embed.count) * 30)
           }
-        })
-        await refresh()
-        if (degraded) flash(`${file.name}：${degraded}`, 6000)
+        } else {
+          progressPct.value = Math.min(96, progressPct.value + 8)
+        }
+      })
+      await refresh()
+      if (degraded) {
+        semanticFailed = true
+        flash(`${file.name}：${degraded}`, 7000)
       }
-    flash('导入完成，已建立本地索引')
+    }
+    flash(semanticFailed ? '导入完成（已用关键词检索；稍后可在设置页重试语义模型）' : '导入完成，已建立本地索引')
   } catch (err) {
     flash((err as Error).message || '导入失败', 6000)
   } finally {
@@ -197,7 +203,7 @@ function exportConv(conv: Conversation) {
 
 /* ---------------- 设置 / 模型源 ---------------- */
 const customBase = ref(loadSourcePref()?.customBase ?? '')
-const sourceOrder = ref<SourceId[]>(loadSourcePref()?.order ?? ['custom', 'hf-mirror', 'huggingface'])
+const sourceOrder = ref<SourceId[]>(loadSourcePref()?.order ?? ['custom', 'self', 'hf-mirror', 'huggingface'])
 const probeMsg = ref('')
 
 function persistSources() {
@@ -237,6 +243,7 @@ async function upgrade() {
 
 const sourceLabel: Record<SourceId, string> = {
   custom: '自定义对象存储/CDN',
+  self: '方子同源（推荐，国内直连/可离线）',
   'hf-mirror': 'hf-mirror.com（国内镜像）',
   huggingface: 'huggingface.co（官方）'
 }

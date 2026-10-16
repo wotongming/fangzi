@@ -316,7 +316,7 @@ fangzi/
 - **使用场景**：对涉密合同/判决书/尽调底稿/研报提问且不能上云、弱网或断网下检索资料、把多年笔记与资料建成本地可问答知识库、不想按席位/token 为云端 ChatPDF 类产品付费。
 - **解决痛点**：敏感文档上公有云有合规红线、云端文档问答持续收费、纯关键词搜索换个问法就找不到、境外模型源国内下载大文件不稳。
 - **关键词**：本地知识库、文档问答、本地 RAG、私有知识库、语义检索、向量检索、混合检索、BM25、RRF、bge、embedding、合同问答、研报问答、离线问答、数据不出端、IndexedDB、WebAssembly、hf-mirror、Cloudflare R2、知识管理。
-- **数据与合规**：解析/嵌入/存储全部浏览器本地（IndexedDB 三表 + Cache Storage 缓存模型）；模型 `bge-small-zh-v1.5`（MIT）、onnxruntime-web（MIT）均商用友好；零新增 npm 依赖，自实现 BERT WordPiece 分词；V1 支持 txt/md/csv/html（pdf.js/mammoth 列 V1.1），答案为抽取式不接生成式 LLM、零幻觉可溯源；模型文件运行时下载不占托管存储。
+- **数据与合规**：解析/嵌入/存储全部浏览器本地（IndexedDB 三表 + Cache Storage 缓存模型）；模型 `bge-small-zh-v1.5`（MIT）、onnxruntime-web（MIT）均商用友好；零新增 npm 依赖，自实现 BERT WordPiece 分词；V1 支持 txt/md/csv/html（pdf.js/mammoth 列 V1.1），答案为抽取式不接生成式 LLM、零幻觉可溯源；**模型默认同源自托管于 `/mf/bge-small-zh-v1.5/`（约 24MB，随站发布，大陆直连、被 /mf SW 层缓存可离线），hf-mirror/huggingface 作为自动故障切换，专业版可填自带对象存储**。
 - **计费**：免费增值（4 格式解析、本地 bge-small 语义模型 + 关键词混合检索、最多 20 个文档）＋专业版买断 ¥49.90（文档不限量、自定义模型源/自带对象存储 CDN）。
 - **位置**：`src/tools/local-knowledge-base/`，路由 `/#/t/local-knowledge-base`；文档见该目录 `docs/`（guide / postmortem / 五阶段文档 / 5 张 PC·平板·手机真实界面截图）。
 

@@ -175,15 +175,18 @@ test('retrieveAndAnswer 空知识库给出无结果提示', async () => {
   assert.match(res.answer, /没有检索到/)
 })
 
-test('模型源 fileUrl 拼接正确，orderedSources 过滤非法自定义源', () => {
-  const url = fileUrl(orderedSources({ customBase: '', order: ['hf-mirror', 'huggingface'] })[0], EMBED_MODEL, 'config.json')
-  assert.equal(url, 'https://hf-mirror.com/Xenova/bge-small-zh-v1.5/resolve/main/config.json')
-  // 非法 custom（非 https）被剔除，回落到内置源
+test('模型源同源源优先，fileUrl 拼接正确，orderedSources 过滤非法自定义源', () => {
+  // 无自定义源时，同源（方子 /mf）始终第一，国内直连/可离线
+  const first = orderedSources({ customBase: '', order: ['hf-mirror', 'huggingface'] })[0]
+  assert.equal(first.id, 'self')
+  assert.equal(fileUrl(first, EMBED_MODEL, 'config.json'), '/mf/bge-small-zh-v1.5/config.json')
+  // 非法 custom（非 https）被剔除，回落到同源源
   const only = orderedSources({ customBase: 'http://insecure', order: ['custom', 'hf-mirror'] })
-  assert.equal(only[0].id, 'hf-mirror')
-  // 合法 https custom 置顶
+  assert.equal(only[0].id, 'self')
+  // 合法 https custom 置顶，同源紧随其后
   const withCustom = orderedSources({ customBase: 'https://bucket.r2.dev/', order: ['custom', 'hf-mirror'] })
   assert.equal(withCustom[0].host, 'https://bucket.r2.dev')
+  assert.equal(withCustom[1]?.id, 'self')
   const cu = fileUrl(withCustom[0], EMBED_MODEL, 'vocab.txt')
   assert.equal(cu, 'https://bucket.r2.dev/Xenova/bge-small-zh-v1.5/resolve/main/vocab.txt')
 })

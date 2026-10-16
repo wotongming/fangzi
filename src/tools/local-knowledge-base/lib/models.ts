@@ -50,18 +50,33 @@ export const EMBED_MODEL: EmbedModelMeta = {
   ]
 }
 
-export type SourceId = 'custom' | 'hf-mirror' | 'huggingface'
+export type SourceId = 'self' | 'custom' | 'hf-mirror' | 'huggingface'
 
 export interface ModelSource {
   id: SourceId
   label: string
-  /** 拼接文件 URL 的 host（custom 为用户填的完整 base） */
+  /** 拼接文件 URL 的 host（custom 为用户填的完整 base；self 为同源 /mf 目录，特殊处理） */
   host: string
   builtin: boolean
 }
 
+/**
+ * 同源自托管目录（public/mf/bge-small-zh-v1.5，构建后随 EdgeOne Pages 发布）。
+ * 大陆 4G/WiFi 直连同源、不跨域（hf-mirror 的 ACAO 只回显它自身源，浏览器跨域会被拦），
+ * 且被 /mf 的 Service Worker 层缓存，首载后可离线。
+ */
+const BASE_URL = ((import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/').replace(/\/+$/, '')
+const SELF_HOST = `${BASE_URL}/mf/bge-small-zh-v1.5`
+export const SELF_SOURCE: ModelSource = {
+  id: 'self',
+  label: '方子同源（推荐，国内直连/可离线）',
+  host: SELF_HOST,
+  builtin: true
+}
+
 export const BUILTIN_SOURCES: ModelSource[] = [
-  { id: 'hf-mirror', label: 'hf-mirror.com（国内镜像，默认）', host: 'https://hf-mirror.com', builtin: true },
+  SELF_SOURCE,
+  { id: 'hf-mirror', label: 'hf-mirror.com（国内镜像）', host: 'https://hf-mirror.com', builtin: true },
   { id: 'huggingface', label: 'huggingface.co（官方源）', host: 'https://huggingface.co', builtin: true }
 ]
 
@@ -69,6 +84,8 @@ const SOURCE_PREF_KEY = 'fz-lkb:source-pref:v1'
 const CACHE_NAME = 'fz-lkb-models-v1'
 
 export function fileUrl(source: ModelSource, model: EmbedModelMeta, file: string): string {
+  // 同源目录按 public/mf/bge-small-zh-v1.5/<file> 布局，不带 HF 的 repo/resolve/revision 层级
+  if (source.id === 'self') return `${SELF_HOST}/${file}`
   return `${source.host.replace(/\/+$/, '')}/${model.repo}/resolve/${model.revision}/${file}`
 }
 
@@ -85,23 +102,34 @@ export function saveSourcePref(pref: { customBase: string; order: SourceId[] }):
   localStorage.setItem(SOURCE_PREF_KEY, JSON.stringify(pref))
 }
 
-/** 按偏好顺序构造候选源（custom 仅在填了合法 URL 时参与） */
+/** 按偏好顺序构造候选源；同源源始终优先于任何境外/镜像源，自定义源（若配置）排在最前 */
 export function orderedSources(pref?: { customBase: string; order: SourceId[] } | null): ModelSource[] {
   const p = pref ?? loadSourcePref()
   const out: ModelSource[] = []
-  const order = p?.order ?? ['custom', 'hf-mirror', 'huggingface']
-  for (const id of order) {
+  const order = p?.order ?? ['custom', 'self', 'hf-mirror', 'huggingface']
+
+  const pushById = (id: SourceId): void => {
+    if (out.some((s) => s.id === id)) return
     if (id === 'custom') {
       const base = (p?.customBase ?? '').trim().replace(/\/+$/, '')
       if (/^https:\/\/.+/i.test(base)) {
         out.push({ id: 'custom', label: '自定义对象存储/CDN', host: base, builtin: false })
       }
+    } else if (id === 'self') {
+      out.push(SELF_SOURCE)
     } else {
       const b = BUILTIN_SOURCES.find((s) => s.id === id)
       if (b) out.push(b)
     }
   }
-  return out.length ? out : BUILTIN_SOURCES
+
+  // 自定义源若配置则最前；随后保证同源（最稳）；再按用户顺序补其余镜像/官方源
+  if (order.includes('custom')) pushById('custom')
+  pushById('self')
+  for (const id of order) if (id !== 'custom' && id !== 'self') pushById(id)
+  pushById('hf-mirror')
+  pushById('huggingface')
+  return out
 }
 
 /** HEAD 探测某源能否拿到 config.json（跟随跳转、限时） */
@@ -184,8 +212,11 @@ export async function fetchModelFile(
   let lastErr: unknown = null
   for (const source of sources) {
     const url = fileUrl(source, model, file.path)
+    // 单文件下载整体超时：避免弱网/跨域被静默丢弃时 fetch 无限挂起（表现为导入“没反应”）
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 60_000)
     try {
-      const res = await fetch(url)
+      const res = await fetch(url, { signal: ctrl.signal })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const total = Number(res.headers.get('content-length') ?? file.size ?? 0)
       if (!res.body) {
@@ -220,6 +251,8 @@ export async function fetchModelFile(
       return { buf: merged.buffer, sourceId: source.id, cached: false }
     } catch (err) {
       lastErr = err
+    } finally {
+      clearTimeout(timer)
     }
   }
   throw new Error(`所有模型源均无法下载 ${file.path}：${(lastErr as Error)?.message ?? lastErr}`)

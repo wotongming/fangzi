@@ -102,6 +102,14 @@ export class KnowledgeEngine {
       text: t
     }))
 
+    // 关键：先用关键词（BM25）把文档与分块落库并加入内存索引，保证文档立即出现在文档库、
+    // 立即可问答；语义模型只是增强项，即使其下载/初始化失败或耗时，也不影响文档入库。
+    onProgress?.({ stage: 'save', message: '保存到本地…' })
+    await saveDoc(doc)
+    await saveChunks(chunks)
+    this.chunks.push(...chunks)
+    for (const c of chunks) this.bm25.add(c.id, c.text)
+
     let degraded: string | undefined
     if (useSemantic) {
       try {
@@ -117,16 +125,13 @@ export class KnowledgeEngine {
           c.vector = vectors[i]
           c.embedModel = 'bge-small-zh-v1.5-q8'
         })
+        // 嵌入成功后把向量回填到已落库的分块
+        await saveChunks(chunks)
       } catch (err) {
-        degraded = `语义模型暂不可用，已用关键词检索建立索引：${(err as Error).message ?? err}`
+        degraded = `语义模型暂不可用，已用关键词检索建立索引（文档已正常导入）：${(err as Error).message ?? err}`
       }
     }
 
-    onProgress?.({ stage: 'save', message: '保存到本地…' })
-    await saveDoc(doc)
-    await saveChunks(chunks)
-    this.chunks.push(...chunks)
-    for (const c of chunks) this.bm25.add(c.id, c.text)
     return { doc, degraded }
   }
 
