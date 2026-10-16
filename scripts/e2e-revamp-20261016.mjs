@@ -1,7 +1,7 @@
 /**
  * 2026-10-16 改版验证：邮箱替换、整体降价、README/手册刷新、手册接入页面。
  * 覆盖：
- *  A. 顶部导航出现「使用帮助」；/help 渲染手册（标题 + GFM 表格 + 18 个网页工具 + 新邮箱/新价）。
+ *  A. 顶部导航出现「使用帮助」；/help 渲染手册（标题 + GFM 表格 + 19 个网页工具 + 新邮箱/新价）。
  *  B. 首页首次访问出现新手引导条，点 × 后写入 localStorage 且本次消失。
  *  C. 付费工具卡与付费墙显示新价（简历 ¥29.90，年终奖 ¥12.90），旧价 ¥49.90 不再出现。
  *  D. 工具「用户指导」新价（如简历指导含 ¥29.90 而非 ¥49.90）。
@@ -44,17 +44,17 @@ const browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-s
     if (!txt.includes('使用帮助')) throw new Error('nav missing')
     return 'ok'
   })
-  await check('A2 帮助页渲染手册标题与 18 工具表述', async () => {
+  await check('A2 帮助页渲染手册标题与 19 工具表述', async () => {
     const body = await page.locator('.markdown-body').innerText()
     if (!body.includes('方子 · 用户使用手册')) throw new Error('no title')
-    if (!body.includes('18 个网页工具')) throw new Error('no count')
+    if (!body.includes('19 个网页工具')) throw new Error('no count')
     return 'ok'
   })
   await check('A3 GFM 表格被渲染为 table（表头+行）', async () => {
     const th = await page.locator('.markdown-body thead th').count()
     const rows = await page.locator('.markdown-body tbody tr').count()
     if (th < 4) throw new Error(`th=${th}`)
-    if (rows < 18) throw new Error(`rows=${rows}`)
+    if (rows < 19) throw new Error(`rows=${rows}`)
     return `th=${th} rows=${rows}`
   })
   await check('A4 手册含新邮箱与新价、不含旧邮箱', async () => {
@@ -141,7 +141,7 @@ for (const [name, w, h] of [['平板', 834, 1112], ['手机', 375, 812]]) {
   await check(`E2 ${name}帮助页可读且无横向溢出（${w}×${h}）`, async () => {
     const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     const rows = await page.locator('.markdown-body tbody tr').count()
-    if (rows < 18) throw new Error(`rows=${rows}`)
+    if (rows < 19) throw new Error(`rows=${rows}`)
     if (over > 2) throw new Error(`overflow=${over}`)
     return `overflow=${over} rows=${rows}`
   })
