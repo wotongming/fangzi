@@ -119,6 +119,8 @@ export interface ToolManifest {
   status?: 'stable' | 'beta'
   /** 插件类工具：分发信息；可支持多平台多包 */
   plugins?: PluginPackage[]
+  /** 强沉浸工具：网页工具页提供「全屏」入口，进入后隐藏应用外壳并铺满安全区（默认 false） */
+  immersive?: boolean
   /** 作者，可选 */
   author?: string
 }

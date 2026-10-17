@@ -16,6 +16,13 @@
   --shadow: 0 6px 24px rgba(60, 55, 40, 0.08);
   --shadow-sm: 0 2px 10px rgba(60, 55, 40, 0.06);
   --maxw: 920px;
+  /* 移动端原生外壳几何变量：安全区、底部 Tab 高度、内容侧留白 */
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --tab-h: 56px;
+  --gutter-x: 18px;
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif;
   color: var(--ink);
@@ -33,18 +40,32 @@ body {
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   line-height: 1.6;
+  /* 移动端：避免整页橡皮筋滚动穿帮；保留页内正常滚动 */
+  overscroll-behavior-y: none;
 }
 
 #app {
   min-height: 100vh;
 }
-
-a {
-  color: var(--brand-dark);
-  text-decoration: none;
+/* 动态视口：修手机地址栏显隐导致的 100vh 跳动，旧浏览器自动回退上方 100vh */
+@supports (height: 100dvh) {
+  #app {
+    min-height: 100dvh;
+  }
 }
-a:hover {
-  text-decoration: underline;
+
+/* 触摸原生规范：去点击高亮与 300ms 双击延迟（不禁用缩放，保可访问性） */
+a,
+button,
+[role='button'] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.container {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 var(--gutter-x);
 }
 
 button {
@@ -59,10 +80,12 @@ select {
   font-size: 15px;
 }
 
-.container {
-  max-width: var(--maxw);
-  margin: 0 auto;
-  padding: 0 18px;
+a {
+  color: var(--brand-dark);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
 }
 
 .card {
@@ -149,5 +172,17 @@ mark {
 @media (max-width: 560px) {
   :root {
     --radius: 12px;
+  }
+}
+
+/* 移动端（手机 + 小平板竖屏）：收窄侧留白，最大化可用宽度；输入 ≥16px 防 iOS 聚焦放大 */
+@media (max-width: 820px) {
+  :root {
+    --gutter-x: 12px;
+  }
+  input,
+  textarea,
+  select {
+    font-size: 16px;
   }
 }

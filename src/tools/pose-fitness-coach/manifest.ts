@@ -41,8 +41,9 @@ export const manifest: ToolManifest = {
     ]
   },
   createdAt: '2026-10-16',
-  updatedAt: '2026-10-16',
+  updatedAt: '2026-10-17',
   version: '1.0.0',
   status: 'beta',
+  immersive: true,
   author: 'fangzi'
 }

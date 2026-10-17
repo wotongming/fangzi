@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, shallowRef } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef } from 'vue'
 import { RouterLink } from 'vue-router'
 import { getTool } from '../core/registry'
 import { CATEGORY_LABELS, PLATFORM_LABELS, TOOL_TYPE_LABELS } from '../core/constants'
 import { useFavoritesStore } from '../stores/favorites'
 import { renderMarkdown } from '../core/markdown'
+import { useImmersive } from '../composables/useImmersive'
 
 const props = defineProps<{ id: string }>()
 const favorites = useFavoritesStore()
+const imm = useImmersive()
+const immersive = computed(() => imm.active.value)
 
 const tool = computed(() => getTool(props.id))
 const m = computed(() => tool.value?.manifest)
@@ -64,10 +67,19 @@ async function verifiedDownload(url: string, expectSha?: string) {
     verifyMsg.value = e instanceof Error ? e.message : String(e)
   }
 }
+
+// 离开工具时兜底退出沉浸（App 的路由 watcher 也会处理，双保险）
+onBeforeUnmount(() => {
+  if (imm.active.value) void imm.exit()
+})
 </script>
 
 <template>
-  <div class="container runner" v-if="tool && m">
+  <div
+    class="container runner"
+    :class="{ 'runner-immersive': immersive }"
+    v-if="tool && m"
+  >
     <!-- 固定位置的工具条：名称 + 用户指导入口 + 收藏 -->
     <div class="sticky-bar">
       <div class="sb-left">
@@ -78,6 +90,14 @@ async function verifiedDownload(url: string, expectSha?: string) {
         </div>
       </div>
       <div class="sb-actions">
+        <button
+          v-if="m.type === 'web' && m.immersive"
+          class="btn"
+          :class="{ 'btn-primary': !immersive }"
+          @click="imm.toggle()"
+        >
+          {{ immersive ? '✕ 退出全屏' : '⛶ 全屏' }}
+        </button>
         <button
           class="fav"
           :class="{ on: favorites.isFavorite(m.id) }"
@@ -236,5 +256,19 @@ async function verifiedDownload(url: string, expectSha?: string) {
   display: grid;
   gap: 16px;
   justify-items: center;
+}
+
+/* 移动端沉浸态：工具内容铺满安全区，sticky 工具条吸附到状态栏下沿 */
+@media (max-width: 820px) {
+  .runner-immersive {
+    max-width: none;
+    margin: 0;
+    min-height: 100dvh;
+    padding: calc(var(--sat) + 8px) calc(var(--sar) + 10px)
+      calc(var(--sab) + 12px) calc(var(--sal) + 10px);
+  }
+  .runner-immersive .sticky-bar {
+    top: var(--sat);
+  }
 }
 </style>
