@@ -18,7 +18,8 @@ import { orderedSources, selectSource, type ModelSource } from './models'
 import type { KBDocument, KBChunk, DocFormat, AnswerResult } from './types'
 
 export interface IngestProgress {
-  stage: 'parse' | 'chunk' | 'embed' | 'save'
+  /** indexed：文档与 BM25 已落库，界面可立即展示（语义嵌入可能仍在后台进行） */
+  stage: 'parse' | 'chunk' | 'save' | 'indexed' | 'embed'
   message: string
   embed?: EmbedProgress
 }
@@ -109,6 +110,9 @@ export class KnowledgeEngine {
     await saveChunks(chunks)
     this.chunks.push(...chunks)
     for (const c of chunks) this.bm25.add(c.id, c.text)
+    // 文档此刻已可用（可在文档库看到、可用关键词问答）。语义向量只是增强项，
+    // 先发出 indexed 让 UI 立即展示，再在后台尝试嵌入，失败降级 BM25。
+    onProgress?.({ stage: 'indexed', message: '已入库（可立即问答），语义增强进行中…' })
 
     let degraded: string | undefined
     if (useSemantic) {

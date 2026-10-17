@@ -5,6 +5,7 @@
  */
 import { BertTokenizer, padBatch, type Encoded } from './tokenizer'
 import { EMBED_MODEL, fetchModelFile, type ModelSource } from './models'
+import { configureOrtWasm } from '../../../../reusable-module/ort-wasm-loader/ort-wasm-loader'
 import type * as OrtType from 'onnxruntime-web'
 
 export interface EmbedProgress {
@@ -82,10 +83,10 @@ export async function ensureEmbedder(
   tokenizer = new BertTokenizer(new TextDecoder().decode(vocabBuf.buf))
 
   onProgress?.({ phase: 'init', received: 1, total: 1, done: 0, count: 1 })
-  // 与 image-converter 相同的 WASM-only 自托管范式；动态 import 不进主包
-  ort = await import('onnxruntime-web/wasm')
-  const baseUrl = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/'
-  ort.env.wasm.wasmPaths = `${baseUrl}onnx/`
+  // 与 image-converter 相同的 WASM-only 自托管范式；动态 import 不进主包。
+  // 通过通用 ort-wasm-loader 用 blob: 加载胶水脚本，规避 EdgeOne 对 .mjs 下发
+  // application/octet-stream 导致的动态 import MIME 失败。
+  ort = await configureOrtWasm(await import('onnxruntime-web/wasm'))
   session = await ort.InferenceSession.create(new Uint8Array(onnxBuf.buf), {
     executionProviders: ['wasm'],
     graphOptimizationLevel: 'all'

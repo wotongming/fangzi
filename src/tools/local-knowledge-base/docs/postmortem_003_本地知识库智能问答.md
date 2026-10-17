@@ -67,3 +67,16 @@
 - **语义/关键词双通道降级**：BM25 常驻内存（从 IndexedDB hydrate），语义失败自动回退且不阻断主流程；**降级分支务必 `console.warn` 留痕**，避免「静默失败」拖慢排查（本轮最大耗时点）。
 - **响应式 Vue 对象入 IndexedDB 前先解包**为普通对象。
 - **E2E 选择器纪律**：tab/按钮用语义化 class 作用域定位，不用会命中多处文案的裸 `text=`；H 档真实链路用「页面状态文案 + IndexedDB 直读 + console 捕获」三重断言，能把「假成功」（模型就绪但向量缺失）当场抓住。
+
+---
+
+## 热修附记 · 2026-10-18：EdgeOne 胶水 `.mjs` MIME + 导入不即时刷新
+
+线上（https://www.fangzi.asia）手机端实测两个故障，均已修复并端到端验证：
+
+1. **「下载模型失败 / no available backend」根因——不是模型，是胶水 MIME**。`curl -I` 证实 EdgeOne Pages 对自托管的 ORT 胶水 `/onnx/ort-wasm-simd-threaded.mjs` 回 `200` 但 `Content-Type: application/octet-stream`（同名 `.wasm` 是正确的 `application/wasm`）。浏览器对 ES 模块动态 `import()` 做严格 MIME 校验，octet-stream 直接抛 `Failed to fetch dynamically imported module`，ORT 判定无可用后端；模型 onnx（同源源 `/mf/bge-small-zh-v1.5`）本身可达。**24MB 模型根本没到加载这一步。**
+   - 修复：新增通用模块 `reusable-module/ort-wasm-loader`——`fetch()` 取胶水文本（fetch 不做 MIME 校验）→ 检测非 HTML → 包成 `text/javascript` 的 `blob:` URL，再以对象形式 `wasmPaths = { mjs: blobUrl, wasm: 同源直链 }` 交给 ORT。非 `crossOriginIsolated`（本站无 COOP/COEP）ORT 强制单线程、胶水在主线程运行，blob 无 Worker 派生问题；跨域隔离环境或 blob 失败自动回退同源直链。同时接入三处 ORT：本工具 embedder（ort 1.30 `/onnx/`）、image-converter loader、local-transcribe asr（Transformers/ort 1.31 `/whisper/`）。代码侧修复，**不依赖在 EdgeOne 控制台改 MIME**（控制台仍建议补 `.mjs=text/javascript` 作为治本）。
+2. **「导入文档后没反应、文档库一直 0」根因——刷新时机**。文档本就先 BM25 落库再尝试语义嵌入且失败有降级 catch，数据不丢；但 UI 在「整份文件（含可能串行多源下载 24MB、单源 60s 超时）全部结束」后才 `refresh()`，弱网下长时间显示 0。
+   - 修复：`IngestProgress` 增加 `indexed` 阶段，BM25 落库后立即回调；页面收到后立刻 `listDocs()` 刷新（实测模型彻底不可达时文档约 **17ms** 出现），语义增强在后台继续、失败弹 toast 明确提示已降级关键词检索。
+
+**验证（2026-10-18 重跑，真实数据）**：`vue-tsc` 0 error；全量单测 **227/227**；`npm run build` 成功（最大单文件 ort wasm 13.6MiB < 25MiB）；`npm run verify:tools` 22/22；专用 E2E `scripts/e2e-lkb-mime-20261018.mjs` 用 Playwright 把 `/onnx/*.mjs` 强制 fulfill 成 octet-stream 复刻线上——T1 错误 MIME 下语义模型仍「已就绪」，T2 再阻断全部模型 onnx 源时勾选语义导入，文档即时入库（直读 IndexedDB 校验 name/chunkCount）并出现「关键词检索」降级提示；PC/平板/手机三视口横向溢出均为 0。

@@ -86,7 +86,11 @@ async function onFiles(e: Event) {
       const wantSemantic = useSemantic.value && !semanticFailed
       const { degraded } = await engine.ingestFile({ name: file.name, text }, wantSemantic, (p) => {
         progressText.value = `${file.name} · ${p.message}`
-        if (p.embed) {
+        // 文档与关键词索引一落库就刷新列表，不必等待可能很慢/失败的语义模型下载
+        if (p.stage === 'indexed') {
+          void listDocs().then((d) => { docs.value = d })
+          progressPct.value = 70
+        } else if (p.embed) {
           if (p.embed.phase === 'download' && p.embed.total) {
             progressPct.value = Math.round((p.embed.received / p.embed.total) * 60)
           } else if (p.embed.phase === 'init') {
@@ -95,7 +99,7 @@ async function onFiles(e: Event) {
             progressPct.value = 70 + Math.round((p.embed.done / p.embed.count) * 30)
           }
         } else {
-          progressPct.value = Math.min(96, progressPct.value + 8)
+          progressPct.value = Math.min(66, progressPct.value + 8)
         }
       })
       await refresh()

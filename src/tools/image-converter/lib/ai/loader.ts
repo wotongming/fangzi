@@ -10,6 +10,7 @@
  * 避免依赖境外 CDN（国内访问不稳定、部分网络被阻断），并可通过 SW 缓存实现二次离线。
  */
 import type { AiModelMeta } from './models'
+import { configureOrtWasm } from '../../../../../reusable-module/ort-wasm-loader/ort-wasm-loader'
 
 export type Runtime = 'wasm'
 
@@ -32,7 +33,8 @@ export function runtimeLabel(_r: Runtime): string {
 /** 动态加载 onnxruntime-web WASM-only 入口；调用方须保证只在浏览器环境执行 */
 export async function loadOrt(): Promise<typeof import('onnxruntime-web')> {
   const ort = await import('onnxruntime-web/wasm')
-  ort.env.wasm.wasmPaths = ORT_WASM_PATHS
+  // 用 blob: 加载胶水脚本，规避 EdgeOne 对 .mjs 下发 octet-stream 导致的 MIME 导入失败
+  await configureOrtWasm(ort)
   // 多线程需要 crossOriginIsolated；非隔离环境自动回退单线程，这里不强行开启
   return ort
 }

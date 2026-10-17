@@ -14,6 +14,7 @@
 | image-redraw | 通用「安全解码 + 按尺寸重绘 + 编码」纯函数：Canvas 重绘输出天然剥离 EXIF/XMP/IPTC 全部元数据，顺带缩放/EXIF 方向校正/格式与质量控制；createImageBitmap(from-image) 优先、HTMLImage 回退；可传入 OffscreenCanvas 在 Worker 使用，JPEG 自动铺白底 | `image-redraw/image-redraw.ts` | 2026-10-17 由照片隐私清理工作台（pipeline 006）沉淀 |
 | bill-csv | 账单/交易类 CSV 通用解析：UTF-8(BOM)→GBK→替换符多级文本解码、RFC4180 表格解析（引号/内嵌逗号换行/转义）、金额元转整数分、多格式日期解析、表头列名精确+模糊定位（零依赖 TS，浏览器原生 TextDecoder） | `bill-csv/bill-csv.ts` | 2026-10-17 由账单订阅盘点（pipeline 009）沉淀 |
 | recurring-detect | 周期性交易/订阅识别纯函数：商户名归一 + 金额容差归桶 + 扣费间隔中位数落入月/季/半年/年区间 + 变异系数阈值，输出标准 cadence、次数、年化金额与下次扣费预测 | `recurring-detect/recurring-detect.ts` | 2026-10-17 由账单订阅盘点（pipeline 009）沉淀 |
+| ort-wasm-loader | onnxruntime-web 胶水脚本 MIME 兼容加载：静态托管（EdgeOne）把 `.mjs` 下发成 octet-stream 致动态 import 失败时，fetch 文本→`text/javascript` blob URL→对象形式 wasmPaths，跨域隔离/失败自动回退直链；适配 onnxruntime-web 与 Transformers.js | `ort-wasm-loader/ort-wasm-loader.ts` | 2026-10-18 由本地知识库语义后端热修（pipeline 003）沉淀 |
 
 ## 新增模块规范
 

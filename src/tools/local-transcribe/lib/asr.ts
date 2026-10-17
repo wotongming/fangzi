@@ -8,6 +8,7 @@
  *   不破坏 PWA 跨域与可安装性。
  */
 import type { AsrProgress } from './types'
+import { resolveOrtWasmPaths } from '../../../../reusable-module/ort-wasm-loader/ort-wasm-loader'
 
 /** V1 固定 tiny 多语 q8：体积约 40MB 内、CPU 可跑；base/small 列 V1.1 */
 export const MODEL_ID = 'Xenova/whisper-tiny'
@@ -37,13 +38,11 @@ async function configureEnv(onProgress?: (p: AsrProgress) => void): Promise<void
   // ort-wasm-simd-threaded.asyncify.mjs（proxy-worker 专用，其 wasm 26MB 超 EdgeOne 25MiB 限额）；
   // 改为显式 { mjs, wasm } 对象指向无 asyncify 的 plain 版（14MB），
   // 配合无跨域隔离时自动 numThreads=1、proxy=false，走主线程单线程 WASM。
+  // 再经 ort-wasm-loader 用 blob: 加载 mjs，规避 EdgeOne 对 .mjs 下发 octet-stream 的 MIME 失败。
   const dir = `${base}whisper/`
   const wasm = env.backends.onnx.wasm
   if (!wasm) throw new Error('当前 Transformers.js 构建缺少 onnx.wasm 运行时配置')
-  wasm.wasmPaths = {
-    mjs: `${dir}ort-wasm-simd-threaded.mjs`,
-    wasm: `${dir}ort-wasm-simd-threaded.wasm`
-  }
+  wasm.wasmPaths = await resolveOrtWasmPaths({ dir })
   // 无跨域隔离头时不用 worker 代理，避免 SAB 依赖，保证稳定回退单线程
   wasm.proxy = false
   wasm.numThreads = 1
