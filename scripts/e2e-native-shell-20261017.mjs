@@ -61,14 +61,14 @@ const browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-s
   page.on('console', (m) => { if (m.type() === 'error' && !SW_NOISE.test(m.text())) errors.push(m.text()) })
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message))
 
-  await check('M1 手机底部 Tab 显示 4 项，顶部导航/页脚隐藏', async () => {
+  await check('M1 手机底部 Tab 显示 4 项，外壳顶栏/顶部导航/页脚全隐藏', async () => {
     await page.goto(ORIGIN + '/#/', { waitUntil: 'networkidle' })
     if ((await displayOf(page, '.tabbar')) === 'none') throw new Error('底部 Tab 未显示')
     const n = await page.locator('.tabbar .tab').count()
     if (n !== 4) throw new Error(`Tab 项=${n}`)
-    if ((await displayOf(page, '.topnav')) !== 'none') throw new Error('手机仍显示顶部导航')
+    if ((await displayOf(page, '.topbar')) !== 'none') throw new Error('手机仍显示外壳顶栏（白占空间）')
     if ((await displayOf(page, '.footer')) !== 'none') throw new Error('手机仍显示页脚')
-    return 'tabs=4'
+    return 'tabs=4, topbar hidden'
   })
 
   await check('M2 首页 Tab 处于激活态', async () => {

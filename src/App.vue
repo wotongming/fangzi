@@ -152,17 +152,16 @@ watch(
 }
 
 @media (max-width: 820px) {
+  /* 移动端主导航已在底部 Tab，顶部品牌栏整块隐藏，把纵向空间让给内容；
+     刘海/状态栏安全区改由 .page 顶部内边距统一承担 */
   .topbar {
-    /* 移动顶栏内容延伸到状态栏区域，加安全区上内边距 */
-    padding-top: var(--sat);
-  }
-  .topnav {
     display: none;
   }
   .footer {
     display: none;
   }
   .page {
+    padding-top: var(--sat);
     /* 为固定底部 Tab + Home 指示条预留空间 */
     padding-bottom: calc(var(--tab-h) + var(--sab) + 8px);
   }
@@ -211,6 +210,7 @@ watch(
     display: none;
   }
   .app-shell.is-immersive .page {
+    padding-top: 0;
     padding-bottom: 0;
   }
 }

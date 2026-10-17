@@ -258,8 +258,12 @@ onBeforeUnmount(() => {
   justify-items: center;
 }
 
-/* 移动端沉浸态：工具内容铺满安全区，sticky 工具条吸附到状态栏下沿 */
+/* 移动端：外壳品牌顶栏已隐藏，工具条吸附到状态栏安全区下沿；
+   沉浸态工具内容铺满安全区 */
 @media (max-width: 820px) {
+  .sticky-bar {
+    top: var(--sat);
+  }
   .runner-immersive {
     max-width: none;
     margin: 0;
