@@ -11,6 +11,7 @@
 | worker-post | 安全向 Web Worker 发消息：自动剥离 Vue reactive Proxy、自动零拷贝转移 ArrayBuffer、File/Blob 走克隆不误转移 | `worker-post/worker-post.ts` | 2026-10-15 由 GPU 大数据可视化面板（pipeline 002）沉淀 |
 | gpu-detect | 浏览器 GPU 能力探测与降级：只探 adapter（带超时）不销毁 device，规避 Dawn instance 污染，返回 WebGPU/WebGL2/Canvas2D 推荐 | `gpu-detect/gpu-detect.ts` | 2026-10-15 由 GPU 大数据可视化面板（pipeline 002）沉淀 |
 | use-lazy-init | 安全初始化 v-if/异步数据后的 canvas/控制器：post watcher + onMounted 双触发 + 幂等守卫，失败可重试 | `use-lazy-init/use-lazy-init.ts` | 2026-10-15 由 GPU 大数据可视化面板（pipeline 002）沉淀 |
+| image-redraw | 通用「安全解码 + 按尺寸重绘 + 编码」纯函数：Canvas 重绘输出天然剥离 EXIF/XMP/IPTC 全部元数据，顺带缩放/EXIF 方向校正/格式与质量控制；createImageBitmap(from-image) 优先、HTMLImage 回退；可传入 OffscreenCanvas 在 Worker 使用，JPEG 自动铺白底 | `image-redraw/image-redraw.ts` | 2026-10-17 由照片隐私清理工作台（pipeline 006）沉淀 |
 
 ## 新增模块规范
 
