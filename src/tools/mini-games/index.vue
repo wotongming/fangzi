@@ -56,26 +56,26 @@ const NEON: GameDef[] = [
     loader: () => import('./gpu-games/glow-match/glow-match.vue')
   },
   {
-    id: 'neon-pulse-soon',
+    id: 'neon-pulse',
     name: '霓虹脉冲',
     icon: '🎵',
-    desc: '单指节奏光轨（即将上线，专业版）',
+    desc: '三轨下落节奏，点中光拍连击爆分',
     pro: true,
     difficulties: ['normal'],
     kind: 'gpu',
     feature: 'neon-library',
-    soon: true
+    loader: () => import('./gpu-games/neon-pulse/neon-pulse.vue')
   },
   {
-    id: 'orbit-surge-soon',
+    id: 'orbit-surge',
     name: '星轨穿梭',
     icon: '🌠',
-    desc: '驾驶光体穿越粒子星场（即将上线，专业版）',
+    desc: '拖动光体穿越加速粒子星场，生存闪避',
     pro: true,
     difficulties: ['classic'],
     kind: 'gpu',
     feature: 'neon-library',
-    soon: true
+    loader: () => import('./gpu-games/orbit-surge/orbit-surge.vue')
   }
 ]
 
@@ -179,6 +179,11 @@ async function exitStage(): Promise<void> {
 async function toggleMute(): Promise<void> {
   const next = await saveSettings({ muted: !settings.value.muted })
   settings.value = next.settings
+}
+
+async function changeParticle(v: 'auto' | 'high' | 'low'): Promise<void> {
+  settings.value = { ...settings.value, particle: v }
+  await saveSettings({ particle: v })
 }
 
 async function upgrade(): Promise<void> {
@@ -298,10 +303,12 @@ onBeforeUnmount(() => {
       :score="selected.def.kind === 'gpu' ? score : undefined"
       :combo="combo"
       :muted="settings.muted"
+      :particle="settings.particle"
       v-model:paused="paused"
       @exit="exitStage"
       @restart="restartStage"
       @toggle-mute="toggleMute"
+      @update:particle="changeParticle"
     >
       <component
         :is="stageComp"

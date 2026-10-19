@@ -155,13 +155,11 @@ async function run() {
     const { ctx, page } = await newPage(browser, { width: 1280, height: 800 }, false)
     await gotoPicker(page)
 
-    // 两款“即将上线”占位不可进入，也不弹付费墙
+    // M2：两款 GPU 游戏已上线，不再有“即将上线”占位；霓虹脉冲/星轨穿梭为专业版卡
     const soonCount = await page.locator('.neon-card.soon').count()
-    if (soonCount !== 2) fail.push(`应有 2 张即将上线占位，实际 ${soonCount}`)
-    await page.locator('.neon-card.soon').first().click()
-    await page.waitForTimeout(300)
-    if ((await page.locator('.focus-stage').count()) !== 0) fail.push('即将上线卡片不应进入游戏')
-    if ((await page.locator('.paywall').count()) !== 0) fail.push('即将上线卡片不应弹付费墙')
+    if (soonCount !== 0) fail.push(`不应再有即将上线占位，实际 ${soonCount}`)
+    if (!(await page.locator('.neon-card', { hasText: '霓虹脉冲' }).count())) fail.push('缺少霓虹脉冲卡片')
+    if (!(await page.locator('.neon-card', { hasText: '星轨穿梭' }).count())) fail.push('缺少星轨穿梭卡片')
     await shot(page, 'shot-01-pc-picker.png')
 
     // 免费态点专业版 DOM 游戏（三消）→ 付费墙

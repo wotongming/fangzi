@@ -6,10 +6,9 @@
  * 滑动/拖拽输入、霓虹宝石渲染、在精确格位驱动 NeonEngine 粒子爆发/震屏、合成音效与振动。
  * 棋盘为居中 DOM 网格（清晰可读），特效由全屏 canvas 在其下层渲染，沉浸且不挡操作。
  */
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { NeonEngine } from '../../engine/neon-engine'
 import { NeonAudio, haptic } from '../../audio/synth'
-import { NEON_STAGE_KEY } from '../../components/neonStageKey'
 import {
   COLS,
   GEM_HUES,
@@ -37,7 +36,6 @@ const emit = defineEmits<{
   (e: 'combo', v: number): void
 }>()
 
-const stageApi = inject(NEON_STAGE_KEY, null)
 const rootEl = ref<HTMLDivElement | null>(null)
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 const boardEl = ref<HTMLDivElement | null>(null)
@@ -45,20 +43,31 @@ const grid = ref<Grid>(newBoard())
 const score = ref(0)
 const backend = ref('init')
 const invalid = ref(false)
+const selected = ref<{ r: number; c: number } | null>(null)
 let busy = false
 let engine: NeonEngine | null = null
 const audio = new NeonAudio()
 audio.setMuted(props.muted)
 let ro: ResizeObserver | null = null
 let comboTimer: ReturnType<typeof setTimeout> | null = null
+/** 拖拽起手信息；consumed 表示本次按下已经通过滑动触发过交换，抬起时不再按轻点处理。 */
 let down: { r: number; c: number; x: number; y: number } | null = null
+let consumed = false
+/** 超过该位移即认定为“滑动交换”（px），小于它抬起按“轻点选择”处理。 */
+const DRAG_THRESHOLD = 16
 
 const cells = computed(() => {
-  const out: Array<{ r: number; c: number; v: number; hue: number }> = []
+  const out: Array<{ r: number; c: number; v: number; hue: number; sel: boolean }> = []
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const v = grid.value[r]?.[c] ?? 0
-      out.push({ r, c, v, hue: GEM_HUES[(v - 1 + GEM_HUES.length) % GEM_HUES.length] ?? 188 })
+      out.push({
+        r,
+        c,
+        v,
+        hue: GEM_HUES[(v - 1 + GEM_HUES.length) % GEM_HUES.length] ?? 188,
+        sel: !!selected.value && selected.value.r === r && selected.value.c === c
+      })
     }
   }
   return out
@@ -90,40 +99,75 @@ function cellCenter(r: number, c: number): { x: number; y: number } | null {
 function onPointerDown(e: PointerEvent): void {
   audio.ensure() // 用户手势内解锁音频
   const cell = cellFromPoint(e.clientX, e.clientY)
-  if (!cell) return
+  if (!cell) {
+    // 点在棋盘外（空白）只收起选中，绝不打断游戏/弹菜单。
+    down = null
+    selected.value = null
+    return
+  }
   down = { ...cell, x: e.clientX, y: e.clientY }
+  consumed = false
   ;(e.target as Element).setPointerCapture?.(e.pointerId)
 }
 
+/** 滑动：超过阈值立即按主轴方向与相邻格交换，短滑也跟手。 */
+function cancelPointer(): void {
+  down = null
+  consumed = false
+}
+
+async function onPointerMove(e: PointerEvent): Promise<void> {
+  if (!down || consumed || busy) return
+  const dx = e.clientX - down.x
+  const dy = e.clientY - down.y
+  if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+  consumed = true
+  const start = { r: down.r, c: down.c }
+  down = null
+  let target: { r: number; c: number } | null = null
+  if (Math.abs(dx) > Math.abs(dy)) {
+    const c = start.c + (dx > 0 ? 1 : -1)
+    if (c >= 0 && c < COLS) target = { r: start.r, c }
+  } else {
+    const r = start.r + (dy > 0 ? 1 : -1)
+    if (r >= 0 && r < ROWS) target = { r, c: start.c }
+  }
+  selected.value = null
+  if (target) await attemptMove([start.r, start.c], [target.r, target.c])
+}
+
+/** 轻点：点选宝石 → 再点相邻格交换；点同格/空白取消选择。不再唤出任何菜单。 */
 async function onPointerUp(e: PointerEvent): Promise<void> {
-  if (!down || busy) {
-    down = null
+  if (!down) return
+  down = null
+  if (consumed || busy) {
+    consumed = false
     return
   }
-  const start = down
-  down = null
-  const end = cellFromPoint(e.clientX, e.clientY)
-  let target: { r: number; c: number } | null = null
-  if (end && (end.r !== start.r || end.c !== start.c)) {
-    target = end
-  } else {
-    const dx = e.clientX - start.x
-    const dy = e.clientY - start.y
-    if (Math.hypot(dx, dy) < 10) {
-      // 轻点（未拖动）→ 唤出控制浮层，不触发消除
-      stageApi?.toggleMenu()
-      return
-    }
-    if (Math.abs(dx) > Math.abs(dy)) {
-      const c = start.c + (dx > 0 ? 1 : -1)
-      if (c >= 0 && c < COLS) target = { r: start.r, c }
-    } else {
-      const r = start.r + (dy > 0 ? 1 : -1)
-      if (r >= 0 && r < ROWS) target = { r, c: start.c }
-    }
+  const cell = cellFromPoint(e.clientX, e.clientY)
+  if (!cell) {
+    selected.value = null
+    return
   }
-  if (!target) return
-  await attemptMove([start.r, start.c], [target.r, target.c])
+  const cur = selected.value
+  if (!cur) {
+    selected.value = { r: cell.r, c: cell.c }
+    haptic(6, props.vibrate)
+    return
+  }
+  if (cur.r === cell.r && cur.c === cell.c) {
+    selected.value = null
+    return
+  }
+  const adjacent = Math.abs(cur.r - cell.r) + Math.abs(cur.c - cell.c) === 1
+  if (adjacent) {
+    selected.value = null
+    await attemptMove([cur.r, cur.c], [cell.r, cell.c])
+  } else {
+    // 点到非相邻格：改为选中新格，而不是无效抖动。
+    selected.value = { r: cell.r, c: cell.c }
+    haptic(6, props.vibrate)
+  }
 }
 
 async function attemptMove(a: [number, number], b: [number, number]): Promise<void> {
@@ -184,9 +228,16 @@ watch(
 )
 
 watch(
+  () => props.particle,
+  (p) => engine?.setManual(p)
+)
+
+watch(
   () => props.paused,
   (p) => {
     if (p) {
+      selected.value = null
+      down = null
       engine?.stop()
       audio.suspend()
     } else {
@@ -237,11 +288,14 @@ onBeforeUnmount(() => {
         class="board"
         :class="{ invalid }"
         @pointerdown="onPointerDown"
+        @pointermove="onPointerMove"
         @pointerup="onPointerUp"
+        @pointercancel="cancelPointer"
       >
         <template v-for="cell in cells" :key="cell.r + '-' + cell.c">
           <i
             class="gem"
+            :class="{ sel: cell.sel }"
             :style="{
               background: cell.v
                 ? `radial-gradient(circle at 32% 28%, hsl(${cell.hue},100%,78%), hsl(${cell.hue},95%,56%) 55%, hsl(${cell.hue},90%,46%))`
@@ -302,10 +356,20 @@ onBeforeUnmount(() => {
 }
 .gem {
   border-radius: 22%;
-  transition: transform 0.12s ease;
+  transition:
+    transform 0.12s ease,
+    filter 0.12s ease,
+    outline-color 0.12s ease;
+  outline: 2px solid transparent;
+  outline-offset: 1px;
 }
 .gem:active {
   transform: scale(0.9);
+}
+.gem.sel {
+  transform: scale(1.08);
+  outline-color: rgba(255, 255, 255, 0.95);
+  filter: brightness(1.18) saturate(1.15);
 }
 @keyframes nudge {
   0%, 100% { transform: translateX(0); }

@@ -133,6 +133,16 @@ export class NeonEngine {
     }
   }
 
+  /** 运行时切换特效档位（设置菜单用），立即更新粒子上限/辉光/DPR。 */
+  setManual(manual: 'auto' | 'high' | 'low'): void {
+    const next = applyManual({ ...this.quality }, manual)
+    this.quality = next
+    this.particles.setCap(next.particleCap)
+    this.backend?.setBloomPasses?.(next.bloomPasses)
+    const targetDpr = Math.min(window.devicePixelRatio || 1, next.dprCap)
+    if (Math.abs(targetDpr - this.dpr) > 0.01) this.resize()
+  }
+
   burst(x: number, y: number, o?: BurstOptions): number {
     return this.particles.burst(x, y, o, this.palette)
   }

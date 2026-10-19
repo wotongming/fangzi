@@ -31,6 +31,7 @@ export const manifest: ToolManifest = {
     '华容道', '数字华容道', '滑块拼图', '推盘子', '十五数字',
     '消消乐', '三消', '连连看', '数独', 'brain game', 'puzzle', 'game', '离线游戏', '无广告',
     '炫光', '霓虹', '全屏游戏', '沉浸', '炫酷游戏', '粒子特效', '连消', '反应力',
+    '节奏游戏', '音游', '下落音符', '闪避', '躲避障碍', '跑酷', '生存游戏',
     'webgl游戏', 'gpu游戏', '网页gpu', 'html5游戏'
   ],
   billing: {
@@ -40,12 +41,12 @@ export const manifest: ToolManifest = {
     features: [
       { key: 'free-games', label: '免费畅玩：2048、记忆翻牌、炫光连消（霓虹 GPU 系列引流款）', free: true },
       { key: 'pro-library', label: '专业版：解锁数字华容道、三消等完整经典游戏库', free: false },
-      { key: 'neon-library', label: '专业版：解锁霓虹节奏、星轨穿梭等更多 GPU 炫光游戏与进阶主题（持续更新）', free: false }
+      { key: 'neon-library', label: '专业版：解锁霓虹脉冲（节奏）、星轨穿梭（闪避）等 GPU 炫光游戏与进阶特效（持续更新）', free: false }
     ]
   },
   createdAt: '2026-10-17',
   updatedAt: '2026-10-19',
-  version: '1.1.0',
+  version: '1.2.0',
   status: 'beta',
   immersive: true,
   author: 'fangzi'

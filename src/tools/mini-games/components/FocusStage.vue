@@ -24,8 +24,10 @@ const props = withDefaults(
     muted?: boolean
     /** 是否暂停（与内部暂停按钮双向同步） */
     paused?: boolean
+    /** 粒子/特效档位（仅 GPU 游戏显示切换） */
+    particle?: 'auto' | 'high' | 'low'
   }>(),
-  { kind: 'gpu', score: undefined, combo: 0, muted: false, paused: false }
+  { kind: 'gpu', score: undefined, combo: 0, muted: false, paused: false, particle: 'auto' }
 )
 
 const emit = defineEmits<{
@@ -33,11 +35,47 @@ const emit = defineEmits<{
   (e: 'restart'): void
   (e: 'toggle-mute'): void
   (e: 'update:paused', v: boolean): void
+  (e: 'update:particle', v: 'auto' | 'high' | 'low'): void
 }>()
 
 const imm = useImmersive()
 const menuOpen = ref(false)
 let hideTimer: ReturnType<typeof setTimeout> | null = null
+
+// —— 屏幕常亮（Wake Lock）：进入专注态请求，离开/隐藏时释放；不支持则静默忽略 ——
+type WakeLockSentinelLike = { released: boolean; release: () => Promise<void> }
+let wakeLock: WakeLockSentinelLike | null = null
+async function acquireWakeLock(): Promise<void> {
+  try {
+    const nav = navigator as Navigator & {
+      wakeLock?: { request: (t: 'screen') => Promise<WakeLockSentinelLike> }
+    }
+    if (!nav.wakeLock) return
+    if (wakeLock && !wakeLock.released) return
+    wakeLock = await nav.wakeLock.request('screen')
+  } catch {
+    /* 拒绝/不支持：不影响游戏 */
+  }
+}
+function releaseWakeLock(): void {
+  if (wakeLock && !wakeLock.released) void wakeLock.release().catch(() => undefined)
+  wakeLock = null
+}
+function onVisibilityForWake(): void {
+  if (!document.hidden && !props.paused) void acquireWakeLock()
+}
+
+const PARTICLE_LABEL: Record<'auto' | 'high' | 'low', string> = {
+  auto: '自动',
+  high: '高（更炫）',
+  low: '低（省电）'
+}
+function cycleParticle(): void {
+  const order: Array<'auto' | 'high' | 'low'> = ['auto', 'high', 'low']
+  const cur: 'auto' | 'high' | 'low' = props.particle ?? 'auto'
+  const next: 'auto' | 'high' | 'low' = order[(order.indexOf(cur) + 1) % order.length] ?? 'auto'
+  emit('update:particle', next)
+}
 
 function showMenu(autoHide = true): void {
   menuOpen.value = true
@@ -86,6 +124,8 @@ provide(NEON_STAGE_KEY, { toggleMenu })
 onMounted(() => {
   // 正常路径父级已在手势内 enter；此处仅兜底（如被复用时未进入）。
   if (!imm.active.value) void imm.enter()
+  void acquireWakeLock()
+  document.addEventListener('visibilitychange', onVisibilityForWake)
 })
 
 // 用户按 Esc / 系统手势退出系统全屏时，应用沉浸态会被置 false；联动退出专注态。
@@ -96,8 +136,18 @@ watch(
   }
 )
 
+watch(
+  () => props.paused,
+  (p) => {
+    if (p) releaseWakeLock()
+    else void acquireWakeLock()
+  }
+)
+
 onBeforeUnmount(() => {
   if (hideTimer) clearTimeout(hideTimer)
+  document.removeEventListener('visibilitychange', onVisibilityForWake)
+  releaseWakeLock()
   if (imm.active.value) void imm.exit()
 })
 </script>
@@ -127,6 +177,9 @@ onBeforeUnmount(() => {
           {{ paused ? '▶ 继续' : '❚❚ 暂停' }}
         </button>
         <button class="sheet-btn" @click="restart">↻ 重新开始</button>
+        <button v-if="kind === 'gpu'" class="sheet-btn" @click="cycleParticle">
+          ✨ 特效：{{ PARTICLE_LABEL[particle] }}
+        </button>
         <button class="sheet-btn" @click="emit('toggle-mute')">{{ muted ? '🔇 已静音' : '🔊 音效开' }}</button>
         <button class="sheet-btn danger" @click="exit_()">✕ 退出游戏</button>
       </div>
