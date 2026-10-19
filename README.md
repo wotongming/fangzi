@@ -460,3 +460,15 @@ fangzi/
 - **数据与合规**：独立 IndexedDB 库 `fangzi-home-medicine` v1（members/meds，memberId/active 索引），写库前深度 `toRaw` 解代理；加密档案用浏览器原生 Web Crypto（PBKDF2 10 万次 + AES-GCM 256），.ics 手写（每日重复 COUNT=30），**零新增 npm 依赖**、无后端、数据不上传，无 NC 授权资源。
 - **计费**：免费增值——1 位成员、药箱台账、有效期/开封倒计时、今日计划与基础日历提醒免费；专业版**买断 ¥6.90**，或订阅 **月 ¥1.9 / 年 ¥19**，解锁多成员、成分重复与高风险组合提示、季度理药梳理、就诊清单导出与加密家庭档案。
 - **位置**：`src/tools/home-medicine/`，路由 `/#/t/home-medicine`；文档见该目录 `docs/`（guide/postmortem、五阶段文档在 `docs/stage/`、PC·平板·手机真实截图在 `docs/shots/`）。M 档：纯逻辑下沉 `lib/`（models/rules-cn/expiry/safety/schedule/clinic-list/store/notify/crypto），新增 `test/home-medicine.test.ts` 18 例（全量单测 307）；`npm run verify:tools` = 27；`scripts/e2e-home-medicine-20261019.mjs` 三视口（1280×860 / 834×1112 / 375×812）全流程 E2E 全绿（建成员→免费第 2 成员门→建药今日计划→专业版开封超期/对乙酰氨基酚重复/抗凝+布洛芬 3 条 danger 且引导咨询医生药师→就诊清单→不诊断免责）、零横向溢出。EdgeOne 限额：dist 约 131 MiB / 131 文件 / 最大 22.9 MiB，本工具零大资产，均在 5 GiB / 20000 / 25 MiB 内。
+
+## 备考错题调度（exam-review-scheduler · 2026-10-20）
+
+- **简介**：面向考证/考研/考公人群的本地错题本与艾宾浩斯间隔复习调度工具。按考试项目管理自录错题，三级标签树（科目→章节→考点，必选末级考点才能提交）；SM-2 变体调度引擎按「记得/模糊/已忘」三键自评自动排下次复习日（基准间隔 [1,2,4,7,15] 天，reps≥5 后按间隔×难度系数滚动，已忘归零回到 1 天）；今日复习队列按逾期久者优先，支持拍照附件（Canvas 长边 1600 压 JPEG、去 EXIF）；弱项热力图按考点正确率红(<50%)/黄(50–70%)/绿(>70%) 标色；模考记录手写 SVG 趋势曲线与目标分虚线；报考/保弃决策看板给固定模板文案与免责；提醒三层（角标+可选系统通知+.ics 导出）；全库 JSON 导出/导入按 id 去重合并。**只管理用户自录错题，不搜答案、不抓取/内置任何机构题库或出版社内容，数据全程只存本机。**
+- **目标用户**：在职考证（CPA/法考/公考/考研）需要反复刷错题的人；纸质讲义错题懒得手抄、想要自动安排每天复习的人；想知道自己哪个考点最弱、模考分数有没有进步的人；不愿把学习记录上传第三方的人。
+- **使用场景**：做完题把错题录进来（可拍照）；每天打开看「今日」该复习哪几道；自评记得/模糊/已忘自动排下次；考前看弱项热力图补短板；记几次模考看分数曲线与目标分差距；导出 .ics 获得复习提醒；换机前导出 JSON 备份。
+- **解决痛点**：错题抄在本子上不复习等于白做；不知道该哪天复习、凭感觉翻书；薄弱考点散落在各题里看不出规律；模考分数没有可视化追踪；复习提醒靠闹钟容易忘；错题数据散在不同 App 无法迁移。
+- **合规边界**：只做用户自录错题的记录与间隔调度，**不提供搜答案、不内置/抓取任何机构题库、教材或出版社版权内容**；决策看板为固定模板文案，不构成报考/保弃建议，一切以官方招生简章与个人判断为准。
+- **关键词**：错题本、艾宾浩斯、间隔重复、SM-2、复习计划、备考、考证、考研、考公、CPA、法考、弱项分析、考点、模考、学习提醒、.ics、本地优先。
+- **数据与合规**：独立 IndexedDB 库 `fangzi-exam-review` v1（projects/questions/reviews/mockExams，projectId/nextReview/questionId/ts 索引），写库前深度 `toRaw` 解代理（嵌套 pointPath 单独拍平）；日期用本地日历日 YYYY-MM-DD + 整数天差；照片 Canvas 重绘去 EXIF，.ics 手写，**零新增 npm 运行时依赖**、无后端、数据不上传，无 NC 授权资源。
+- **计费**：免费增值——1 个考试项目、50 道错题、今日队列、弱项热力图、模考曲线免费；专业版**买断 ¥8.90**，解锁多项目、不限题数、报考/保弃决策看板与全库导出导入。
+- **位置**：`src/tools/exam-review-scheduler/`，路由 `/#/t/exam-review-scheduler`；文档见该目录 `docs/`（guide/postmortem、五阶段文档在 `docs/stage/`、PC·平板·手机真实截图在 `docs/shots/`）。M 档：纯逻辑下沉 `lib/`（models/scheduler/queue/weakness/curve/decision/notify/store/photos/ocr），新增 `test/exam-review-scheduler.test.ts` 16 例（全量单测 362）；`npm run verify:tools` = 28；`scripts/e2e-exam-review-scheduler-20261020.mjs` 三视口（1280×860 / 834×1112 / 375×812）全流程 E2E 全绿（建项目→录 2 题含标签与照片→IDB 注入到期→队列出现→已忘重置 1 天/记得递进 60 天→弱项红块→2 次模考出曲线与目标虚线→免费第 2 项目/第 51 题被拦、买断解锁）、零横向溢出。EdgeOne 限额：dist 约 131 MiB / 144 文件 / 最大 22.9 MiB，本工具仅新增约 30 KB JS + 4 KB CSS、零大资产，均在 5 GiB / 20000 / 25 MiB 内。OCR（D15）未启用，ocr.ts 仅占位 `experimental`，拍照后手动录入，列后续项。
