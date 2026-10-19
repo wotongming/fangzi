@@ -72,6 +72,16 @@
 
 ## 验证覆盖
 
+> 档位：**H**（three.js / WebGL 3D / WASM 级实时渲染、多后端降级）。
+>
+> **M4（2026-10-19，并入小游戏合集 + 原创卡通角色）**：本游戏由独立工具「莫比环 MÖBIUS」并入 `src/tools/mini-games/gpu-games/mobius-runner/`，更名**莫比环跑酷**，删除独立工具（verify 工具数 28→**27**），主角由发光六边形改为**原创卡通奔跑小人**（5 角色：电光小子/棉花兔/薄荷猫免费，火焰仔/紫影侠专业；几何体程序化绘制，无版权 IP），计费并入小游戏专业版 **¥19.90**（`useToolBilling('mini-games')`，toolId 严格匹配）。以下早期独立版数据保留为历史记录，**M4 重刷后的权威数据见下**。
+>
+> M4 质量门（全绿，本轮重新执行）：
+> - `npx vue-tsc --noEmit`：**0 错**；`npm test`：**342 通过 / 0 失败**（仅导入路径从独立工具改到合集内新位置，6 处）；`npm run verify:tools`：**27**；`npm run build`：成功。
+> - 三视口 E2E 脚本改为从**合集选卡进入**（`/#/t/mini-games` → 莫比环跑酷卡 → FocusStage），强制 WebGL2，覆盖：角色选择（断言 5 角色、选棉花兔生效、点锁定火焰仔弹 ¥19.9 付费墙）、教学、点按翻转 `face 0→1→0`、canvas backing（PC 实测 1280×800）、HUD 暂停/继续、自然撞墙结算（PC 实测死亡分 **210**）、免费无续命、¥19.90 付费墙、注入 `toolId:'mini-games'` 已购订单后光盾续命、立刻重开；三视图口横向溢出全 **0px**、无 pageerror。
+> - 三个 chunk `MobiusRenderer-*.js`（548,011 B / gzip 137.66 KiB）、`mobius-runner-*.js`、`mobius-runner-*.css` 均进入 `dist/sw.js` 预缓存，离线可玩；dist ≈ **131 MiB / 142 文件**，无 >25 MiB 文件。
+> - 9 张截图已用合集版真实 build 全部重刷覆盖（见下表 M4 列）。
+
 ### 自动化质量门（全绿）
 
 - `npx vue-tsc --noEmit`：通过（strict + noUnusedLocals/Parameters + noUncheckedIndexedAccess）。
@@ -103,19 +113,19 @@
 
 ### guide 截图有效性核验（均为生产 build + preview 真实截图）
 
-| 文件 | 像素 | 大小(B) | 内容 | 是否通过 |
+| 文件 | 像素 | M4 大小(B) | 内容（M4 重刷后） | 是否通过 |
 | --- | --- | --- | --- | --- |
-| shot-01-pc-playing.png | 1280×800 | 36,014 | PC 对局：光带/玩家/红墙绿缺口/分数 HUD/暂停 | ✅ |
-| shot-02-pc-paused.png | 1280×800 | 217,194 | PC 暂停设置面板 | ✅ |
-| shot-03-pc-dead.png | 1280×800 | 234,957 | PC 结算面板（分数/最高/重开） | ✅ |
-| shot-04-pc-paywall.png | 1280×800 | 249,860 | 专业版付费墙 ¥12.90 + 四项权益 | ✅ |
-| shot-05-pc-revive.png | 1280×800 | 246,364 | 已购专业版光盾续命入口 | ✅ |
-| shot-06-tablet-menu.png | 834×1112 | 247,473 | 平板主菜单 | ✅ |
-| shot-07-tablet-playing.png | 834×1112 | 40,166 | 平板对局全屏自适应 | ✅ |
-| shot-08-mobile-menu.png | 375×812 | 122,008 | 手机主菜单 | ✅ |
-| shot-09-mobile-playing.png | 375×812 | 19,944 | 手机对局全屏自适应 | ✅ |
+| shot-01-pc-playing.png | 1280×800 | 20,218 | PC 对局：棉花兔在青色光带上奔跑、脚下光环、星空、红墙绿缺口、左上分数 1 与右上暂停，全屏无外壳 | ✅ |
+| shot-02-pc-paused.png | 1280×800 | 49,538 | PC 对局中 HUD 暂停浮层 | ✅ |
+| shot-03-pc-dead.png | 1280×800 | 310,011 | PC 结算面板（死亡分 210/重开/解锁专业版） | ✅ |
+| shot-04-pc-paywall.png | 1280×800 | 325,569 | 舞台内付费墙：小游戏专业版、光盾续命/火焰仔紫影侠/全部专业游戏、一次买断 **¥19.90** | ✅ |
+| shot-05-pc-revive.png | 1280×800 | 324,865 | 已购专业版死亡后光盾续命入口 | ✅ |
+| shot-06-tablet-menu.png | 834×1112 | 319,475 | 平板舞台主菜单（角色更换/开始奔跑） | ✅ |
+| shot-07-tablet-playing.png | 834×1112 | 20,070 | 平板对局全屏自适应 | ✅ |
+| shot-08-mobile-menu.png | 375×812 | 154,220 | 手机主菜单：标题「莫比环跑酷」、当前角色电光小子·更换、开始奔跑、最高分/已跑 0 局 | ✅ |
+| shot-09-mobile-playing.png | 375×812 | 10,789 | 手机对局全屏自适应 | ✅ |
 
-全部为 PNG 真实截图、非 0 字节、可正常打开，内容与 guide 描述一致；PC 5 张、平板/手机各 2 张，满足 H 档数量要求。无头环境无法真正进入系统全屏，截图含方子外壳顶栏，真机 useImmersive 下会隐藏，属环境差异非缺陷。
+全部为生产 `build` + `vite preview` 真实截图，PNG、非 0 字节、可正常打开，内容与 guide 描述一致；PC 5 张、平板/手机各 2 张，满足 H 档数量要求。合集舞台 FocusStage 为 `position:fixed;inset:0;z-index:1000` 全屏容器，截图已确认不含方子外壳顶栏/底部 Tab（见 shot-01/08）；真机独显 Chrome 的系统级全屏与 WebGL 上屏观感建议上线后再人工复核一次。
 
 ## 可复用经验
 

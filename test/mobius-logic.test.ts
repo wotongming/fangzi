@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { mulberry32 } from '../src/tools/mobius-runner/game/rng.ts'
+import { mulberry32 } from '../src/tools/mini-games/gpu-games/mobius-runner/game/rng.ts'
 import {
   frameAt,
   pointOn,
@@ -12,8 +12,8 @@ import {
   RIBBON_WIDTH,
   TWIST_PERIOD,
   FIRST_TWIST_AT
-} from '../src/tools/mobius-runner/game/geometry.ts'
-import { speedAt, TUTORIAL_DIST } from '../src/tools/mobius-runner/game/difficulty.ts'
+} from '../src/tools/mini-games/gpu-games/mobius-runner/game/geometry.ts'
+import { speedAt, TUTORIAL_DIST } from '../src/tools/mini-games/gpu-games/mobius-runner/game/difficulty.ts'
 import {
   createRun,
   startRun,
@@ -23,9 +23,9 @@ import {
   displayScore,
   STEP,
   MULTI_CAP
-} from '../src/tools/mobius-runner/game/logic.ts'
-import { resolveSettings, DEFAULT_SETTINGS } from '../src/tools/mobius-runner/game/storage.ts'
-import type { GameState } from '../src/tools/mobius-runner/game/types.ts'
+} from '../src/tools/mini-games/gpu-games/mobius-runner/game/logic.ts'
+import { resolveSettings, DEFAULT_SETTINGS } from '../src/tools/mini-games/gpu-games/mobius-runner/game/storage.ts'
+import type { GameState } from '../src/tools/mini-games/gpu-games/mobius-runner/game/types.ts'
 
 function runTo(s: GameState, until: (d: number) => boolean, maxSteps = 200000): void {
   let n = 0

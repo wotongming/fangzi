@@ -43,6 +43,16 @@ const CLASSIC: GameDef[] = [
 
 const NEON: GameDef[] = [
   {
+    id: 'mobius-runner',
+    name: '莫比环跑酷',
+    icon: '🌀',
+    desc: 'Three.js 3D 莫比乌斯光带跑酷，一指翻转，选个卡通小人冲到尽头',
+    pro: false,
+    difficulties: ['classic'],
+    kind: 'gpu',
+    loader: () => import('./gpu-games/mobius-runner/mobius-runner.vue')
+  },
+  {
     id: 'glow-match',
     name: '炫光连消',
     icon: '✨',

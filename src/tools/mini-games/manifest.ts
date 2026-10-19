@@ -4,7 +4,7 @@ export const manifest: ToolManifest = {
   id: 'mini-games',
   name: '小游戏合集',
   tagline:
-    '通勤排队午休摸鱼，打开即玩：经典益智（2048、翻牌、华容道）与 GPU 加速的霓虹炫光游戏（炫光连消、霓虹脉冲、星轨穿梭），粒子辉光、震屏与合成音效带来全屏沉浸感；全部纯前端离线运行、无广告不打扰，设备不支持高端渲染时自动流畅降级，最高分保存在本机。',
+    '通勤排队午休摸鱼，打开即玩：经典益智（2048、翻牌、华容道）与 GPU 加速的炫光游戏（莫比环跑酷、炫光连消、霓虹脉冲、星轨穿梭）。莫比环跑酷是 Three.js 3D 莫比乌斯光带跑酷，选一个卡通小人一指翻转、全屏冲刺；粒子辉光、震屏与合成音效带来沉浸式体验；全部纯前端离线运行、无广告不打扰，设备不支持高端渲染时自动流畅降级，最高分保存在本机。',
   category: 'life',
   type: 'web',
   targetUsers: [
@@ -32,21 +32,22 @@ export const manifest: ToolManifest = {
     '消消乐', '三消', '连连看', '数独', 'brain game', 'puzzle', 'game', '离线游戏', '无广告',
     '炫光', '霓虹', '全屏游戏', '沉浸', '炫酷游戏', '粒子特效', '连消', '反应力',
     '节奏游戏', '音游', '下落音符', '闪避', '躲避障碍', '跑酷', '生存游戏',
-    'webgl游戏', 'gpu游戏', '网页gpu', 'html5游戏'
+    '3d跑酷', '莫比乌斯', '莫比环', '莫比环跑酷', '无尽跑酷', '一指翻转', 'three.js', '卡通跑酷', '3d游戏',
+    'webgl游戏', 'gpu游戏', '网页gpu', 'html5游戏', '角色', '可选角色'
   ],
   billing: {
     mode: 'freemium',
     currency: 'CNY',
     priceCents: 1990,
     features: [
-      { key: 'free-games', label: '免费畅玩：2048、记忆翻牌、炫光连消（霓虹 GPU 系列引流款）', free: true },
+      { key: 'free-games', label: '免费畅玩：2048、记忆翻牌、炫光连消、莫比环跑酷（霓虹 GPU 系列引流款）', free: true },
       { key: 'pro-library', label: '专业版：解锁数字华容道等完整经典游戏库', free: false },
-      { key: 'neon-library', label: '专业版：解锁霓虹脉冲（节奏）、星轨穿梭（闪避）等 GPU 炫光游戏与进阶特效（持续更新）', free: false }
+      { key: 'neon-library', label: '专业版：解锁霓虹脉冲（节奏）、星轨穿梭（闪避）等 GPU 炫光游戏，并在莫比环跑酷中获得光盾续命与专属卡通角色、进阶特效（持续更新）', free: false }
     ]
   },
   createdAt: '2026-10-17',
   updatedAt: '2026-10-19',
-  version: '1.3.0',
+  version: '1.4.0',
   status: 'beta',
   immersive: true,
   author: 'fangzi'

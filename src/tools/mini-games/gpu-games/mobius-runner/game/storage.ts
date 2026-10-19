@@ -1,13 +1,14 @@
 /**
- * 莫比环本地存档：独立 IndexedDB 库 fz-mobius-runner-v1，与其它工具数据完全隔离。
- * 所有字段宽松可选 + 默认值回退，缺字段/旧版本数据不崩。
+ * 莫比环跑酷本地存档（并入小游戏合集后仍沿用独立库 fz-mobius-runner-v1，
+ * 保证独立工具时代的最高分/局数零迁移保留）。
+ * 相对路径：本文件位于 mini-games/gpu-games/mobius-runner/game/，到仓库根 reusable-module 需上溯 6 层。
  */
 import {
   openIndexedDB,
   putValue,
   getValue,
   type IndexedDBConfig
-} from '../../../../reusable-module/indexeddb-kv/indexeddb-kv'
+} from '../../../../../../reusable-module/indexeddb-kv/indexeddb-kv'
 import type { Settings } from './types'
 
 export const DB_NAME = 'fz-mobius-runner-v1'
@@ -29,6 +30,10 @@ export interface MobiusStateRecord {
   unlockedThemes?: string[]
   /** 新手教学是否已看过 */
   tutorialSeen?: boolean
+  /** 当前选中的原创角色 id */
+  characterId?: string
+  /** 是否已展示过开跑前角色选择 */
+  introDone?: boolean
   settings?: Partial<Settings>
 }
 
@@ -73,6 +78,8 @@ export async function loadState(): Promise<MobiusStateRecord> {
       runs: safeNumber(rec.runs),
       unlockedThemes: safeStringArray(rec.unlockedThemes),
       tutorialSeen: rec.tutorialSeen === true,
+      characterId: typeof rec.characterId === 'string' ? rec.characterId : undefined,
+      introDone: rec.introDone === true,
       settings: resolveSettings(rec)
     }
   } catch {
@@ -92,6 +99,8 @@ export async function saveState(patch: Partial<Omit<MobiusStateRecord, 'id'>>): 
       runs: Math.max(cur.runs ?? 0, safeNumber(patch.runs ?? cur.runs)),
       unlockedThemes: Array.from(new Set([...(cur.unlockedThemes ?? []), ...safeStringArray(patch.unlockedThemes)])),
       tutorialSeen: patch.tutorialSeen ?? cur.tutorialSeen ?? false,
+      characterId: typeof patch.characterId === 'string' ? patch.characterId : cur.characterId,
+      introDone: patch.introDone ?? cur.introDone ?? false,
       settings: { ...resolveSettings(cur), ...(patch.settings ?? {}) }
     }
     await putValue(DB_CFG, STORE, next)

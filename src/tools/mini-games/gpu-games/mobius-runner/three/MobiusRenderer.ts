@@ -1,33 +1,36 @@
 /**
- * 莫比环 Three.js 渲染器（纯呈现层，不做规则判定）。
+ * 莫比环跑酷 Three.js 渲染器（纯呈现层，不做规则判定）。
  * 规则真相来自 game/logic；本文件只根据 GameState 快照 + 插值 alpha 绘制。
- * 通过 index.vue 的动态 import() 懒加载，three 只会出现在独立异步 chunk，不进首屏。
+ * 通过 stage 组件动态 import() 懒加载，three 只出现在独立异步 chunk，不进首屏。
+ * 玩家是原创卡通奔跑小人（three/Character.ts），随光带标架站立、奔跑、翻面前空翻。
  */
 import * as THREE from 'three'
 import { frameAt, pointOn, pointAtOffset, RIBBON_WIDTH, LANE_OFFSET, STAND_OFF } from '../game/geometry'
 import type { GameState } from '../game/types'
+import { buildCharacter, type CharacterRig } from './Character'
+import { characterOf, DEFAULT_CHARACTER_ID } from '../game/characters'
 
 export type Fidelity = 'high' | 'low'
 
 export interface RendererOptions {
   fidelity: Fidelity
   reduceMotion: boolean
+  characterId?: string
 }
 
 interface Palette {
   bg: number
   ribbon: number
   edge: number
-  player: number
   wall: number
   gap: number
   shard: number
 }
 
 export const PALETTES: Record<string, Palette> = {
-  aurora: { bg: 0x05060f, ribbon: 0x0c1530, edge: 0x39e6ff, player: 0x9bf7ff, wall: 0xff3b6b, gap: 0x2dffa0, shard: 0xfff27a },
-  ember: { bg: 0x100507, ribbon: 0x2a0e12, edge: 0xff8a3c, player: 0xffd28a, wall: 0xff2f5d, gap: 0xffb14d, shard: 0x7dffc0 },
-  violet: { bg: 0x0a0716, ribbon: 0x181033, edge: 0xb07bff, player: 0xe3d2ff, wall: 0xff4f9a, gap: 0x57f0ff, shard: 0xfff0a8 }
+  aurora: { bg: 0x05060f, ribbon: 0x0c1530, edge: 0x39e6ff, wall: 0xff3b6b, gap: 0x2dffa0, shard: 0xfff27a },
+  ember: { bg: 0x100507, ribbon: 0x2a0e12, edge: 0xff8a3c, wall: 0xff2f5d, gap: 0xffb14d, shard: 0x7dffc0 },
+  violet: { bg: 0x0a0716, ribbon: 0x181033, edge: 0xb07bff, wall: 0xff4f9a, gap: 0x57f0ff, shard: 0xfff0a8 }
 }
 
 function paletteOf(key: string): Palette {
@@ -60,7 +63,7 @@ export class MobiusRenderer {
   private scene = new THREE.Scene()
   private camera: THREE.PerspectiveCamera
   private opts: RendererOptions
-  private palette: Palette = paletteOf("aurora")
+  private palette: Palette = paletteOf('aurora')
 
   private ribbon!: THREE.Mesh
   private ribbonMat!: THREE.MeshBasicMaterial
@@ -68,7 +71,9 @@ export class MobiusRenderer {
   private gatePool: THREE.Group[] = []
   private shardPool: THREE.Mesh[] = []
   private player!: THREE.Group
-  private playerCore!: THREE.Mesh
+  private feetHalo!: THREE.Mesh
+  private rig: CharacterRig | null = null
+  private charId = DEFAULT_CHARACTER_ID
   private star!: THREE.Points
 
   private particles!: THREE.Points
@@ -78,6 +83,7 @@ export class MobiusRenderer {
   private pCursor = 0
 
   private smoothedLane = LANE_OFFSET // 平滑后的车道横向有符号偏移
+  private lastFace: 0 | 1 | -1 = -1
   private shake = 0
   private clock = new THREE.Clock()
   private disposed = false
@@ -86,6 +92,7 @@ export class MobiusRenderer {
   constructor(canvas: HTMLCanvasElement, opts: RendererOptions) {
     this.canvas = canvas
     this.opts = opts
+    this.charId = opts.characterId ?? DEFAULT_CHARACTER_ID
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: opts.fidelity === 'high',
@@ -104,7 +111,19 @@ export class MobiusRenderer {
     this.renderer.setClearColor(p.bg, 1)
     this.ribbonMat.color.setHex(p.ribbon)
     ;(this.edgeLines.material as THREE.LineBasicMaterial).color.setHex(p.edge)
-    ;(this.playerCore.material as THREE.MeshBasicMaterial).color.setHex(p.player)
+  }
+
+  /** 切换原创角色：重建小人（颜色/造型来自角色定义，与主题解耦）。 */
+  setCharacter(id: string): void {
+    if (id === this.charId && this.rig) return
+    this.charId = id
+    if (this.rig) {
+      this.player.remove(this.rig.root)
+      this.rig.dispose()
+      this.rig = null
+    }
+    this.rig = buildCharacter(characterOf(id))
+    this.player.add(this.rig.root)
   }
 
   setFidelity(f: Fidelity): void {
@@ -203,18 +222,16 @@ export class MobiusRenderer {
       this.shardPool.push(m)
     }
 
-    // 玩家：发光核心 + 加性光环
+    // 玩家：原创卡通奔跑小人 + 脚下光环
     this.player = new THREE.Group()
-    this.playerCore = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.22, 0),
-      new THREE.MeshBasicMaterial({ color: p.player })
+    this.feetHalo = new THREE.Mesh(
+      new THREE.RingGeometry(0.24, 0.36, 26),
+      new THREE.MeshBasicMaterial({ color: p.edge, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false })
     )
-    const halo = new THREE.Mesh(
-      new THREE.RingGeometry(0.26, 0.4, 24),
-      new THREE.MeshBasicMaterial({ color: p.edge, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
-    )
-    halo.rotation.x = -Math.PI / 2
-    this.player.add(this.playerCore, halo)
+    this.feetHalo.rotation.x = -Math.PI / 2
+    this.feetHalo.position.y = 0.01
+    this.player.add(this.feetHalo)
+    this.setCharacter(this.charId)
     this.scene.add(this.player)
 
     // 粒子池
@@ -300,13 +317,17 @@ export class MobiusRenderer {
   }
 
   private handleEvents(s: GameState, playerWorld: THREE.Vector3): void {
+    if (s.events.includes('flip')) {
+      this.rig?.flip()
+      this.burst(playerWorld, this.palette.edge, 12, 3)
+    }
     if (s.events.includes('near')) {
       this.shake = this.opts.reduceMotion ? 0.04 : 0.22
       this.burst(playerWorld, this.palette.edge, 26, 4)
     }
     if (s.events.includes('perfect')) {
       this.shake = this.opts.reduceMotion ? 0.05 : 0.3
-      this.burst(playerWorld, this.palette.player, 40, 5.5)
+      this.burst(playerWorld, this.palette.edge, 40, 5.5)
     }
     if (s.events.includes('collect')) this.burst(playerWorld, this.palette.shard, 10, 2.4)
     if (s.events.includes('death')) {
@@ -361,14 +382,24 @@ export class MobiusRenderer {
     this.updateRibbon(interpU)
 
     const frame = frameAt(interpU)
-    // 玩家世界坐标（平滑车道 across + 沿带面法向站立抬高）
+    // 玩家世界坐标（平滑车道 across + 沿带面法向轻微抬高，小人脚部在本地原点）
     this.playerWorld
       .set(frame.center.x, frame.center.y, frame.center.z)
       .addScaledVector(this.vA.set(frame.across.x, frame.across.y, frame.across.z), this.smoothedLane)
-      .addScaledVector(this.vN.set(frame.normal.x, frame.normal.y, frame.normal.z), STAND_OFF + 0.12)
+      .addScaledVector(this.vN.set(frame.normal.x, frame.normal.y, frame.normal.z), STAND_OFF + 0.02)
     this.player.position.copy(this.playerWorld)
-    const spin = this.clock.elapsedTime * 3
-    this.playerCore.rotation.set(spin, spin * 0.7, 0)
+    // 定向到光带标架：本地 +X=切线(前进) +Y=法向(站立) +Z=横向
+    this._basis.makeBasis(
+      this.vT.set(frame.tangent.x, frame.tangent.y, frame.tangent.z),
+      this.vN.set(frame.normal.x, frame.normal.y, frame.normal.z),
+      this.vA.set(frame.across.x, frame.across.y, frame.across.z)
+    )
+    this.player.quaternion.setFromRotationMatrix(this._basis)
+
+    // 切面兜底：事件丢失时也能按 face 变化触发空翻
+    if (this.lastFace !== -1 && this.lastFace !== s.face) this.rig?.flip()
+    this.lastFace = s.face
+    this.rig?.update(dt, s.speed, s.status === 'running')
 
     this.handleEvents(s, this.playerWorld)
 
@@ -398,7 +429,10 @@ export class MobiusRenderer {
       ;(wall.material as THREE.MeshBasicMaterial).opacity = passed ? 0.12 : 0.55
       ;(gap.material as THREE.MeshBasicMaterial).opacity = passed ? 0.12 : 0.5
     }
-    for (; gi < GATE_POOL; gi++){ const gx=this.gatePool[gi]; if(gx) gx.visible = false }
+    for (; gi < GATE_POOL; gi++) {
+      const gx = this.gatePool[gi]
+      if (gx) gx.visible = false
+    }
 
     // 光屑
     let si = 0
@@ -418,7 +452,10 @@ export class MobiusRenderer {
       const pulse = 1 + Math.sin(this.clock.elapsedTime * 6 + sh.u) * 0.15
       m.scale.setScalar(pulse)
     }
-    for (; si < SHARD_POOL; si++){ const sx=this.shardPool[si]; if(sx) sx.visible = false }
+    for (; si < SHARD_POOL; si++) {
+      const sx = this.shardPool[si]
+      if (sx) sx.visible = false
+    }
 
     this.updateParticles(dt, interpU)
 
@@ -460,6 +497,7 @@ export class MobiusRenderer {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.rig?.dispose()
     disposeObject(this.scene)
     this.renderer.dispose()
   }
