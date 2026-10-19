@@ -4,7 +4,7 @@ export const manifest: ToolManifest = {
   id: 'mini-games',
   name: '小游戏合集',
   tagline:
-    '通勤排队午休摸鱼，打开即玩的轻量益智小游戏：2048、翻牌配对、数字华容道、三消，难度适中、单局几分钟，全部纯前端离线运行、无广告不打扰，最高分与进度自动保存在本机。',
+    '通勤排队午休摸鱼，打开即玩：经典益智（2048、翻牌、华容道、三消）外加 GPU 加速的霓虹炫光游戏，粒子辉光、震屏与合成音效带来全屏沉浸感；全部纯前端离线运行、无广告不打扰，设备不支持高端渲染时自动流畅降级，最高分保存在本机。',
   category: 'life',
   type: 'web',
   targetUsers: [
@@ -29,20 +29,23 @@ export const manifest: ToolManifest = {
     '摸鱼', '放松一下', '午休', '通勤', '排队', '等人',
     '2048', '数字合成', '翻牌', '记忆翻牌', '翻牌配对', '记忆配对', '记忆力',
     '华容道', '数字华容道', '滑块拼图', '推盘子', '十五数字',
-    '消消乐', '三消', '连连看', '数独', 'brain game', 'puzzle', 'game', '离线游戏', '无广告'
+    '消消乐', '三消', '连连看', '数独', 'brain game', 'puzzle', 'game', '离线游戏', '无广告',
+    '炫光', '霓虹', '全屏游戏', '沉浸', '炫酷游戏', '粒子特效', '连消', '反应力',
+    'webgl游戏', 'gpu游戏', '网页gpu', 'html5游戏'
   ],
   billing: {
     mode: 'freemium',
     currency: 'CNY',
     priceCents: 1990,
     features: [
-      { key: 'free-games', label: '免费畅玩：2048、记忆翻牌（含三档难度）', free: true },
-      { key: 'pro-library', label: '专业版：解锁数字华容道、三消等完整游戏库（持续更新）', free: false }
+      { key: 'free-games', label: '免费畅玩：2048、记忆翻牌、炫光连消（霓虹 GPU 系列引流款）', free: true },
+      { key: 'pro-library', label: '专业版：解锁数字华容道、三消等完整经典游戏库', free: false },
+      { key: 'neon-library', label: '专业版：解锁霓虹节奏、星轨穿梭等更多 GPU 炫光游戏与进阶主题（持续更新）', free: false }
     ]
   },
   createdAt: '2026-10-17',
-  updatedAt: '2026-10-17',
-  version: '1.0.0',
+  updatedAt: '2026-10-19',
+  version: '1.1.0',
   status: 'beta',
   immersive: true,
   author: 'fangzi'

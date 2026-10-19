@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef, type Component } from 'vue'
 import { manifest } from './manifest'
 import { useToolBilling } from '@/composables/useToolBilling'
-import { loadState, persistState, bestKey } from './lib/storage'
+import { useImmersive } from '@/composables/useImmersive'
+import { bestKey, loadState, saveBest, saveSettings, type MiniGameSettings } from './lib/storage'
+import FocusStage from './components/FocusStage.vue'
 import Game2048 from './components/Game2048.vue'
 import GameMemory from './components/GameMemory.vue'
 import GameKlotski from './components/GameKlotski.vue'
 import GameMatch3 from './components/GameMatch3.vue'
 
 type Diff = 'easy' | 'normal' | 'hard' | 'classic'
+type Kind = 'dom' | 'gpu'
 interface GameDef {
   id: string
   name: string
@@ -16,90 +19,176 @@ interface GameDef {
   desc: string
   pro: boolean
   difficulties: Diff[]
+  kind: Kind
+  /** 计费权益 key（专业版游戏） */
+  feature?: string
+  /** GPU 游戏的异步加载器（动态分包，仅在进入时拉取） */
+  loader?: () => Promise<{ default: Component }>
+  /** DOM 游戏静态组件 */
+  comp?: Component
+  /** 不可点击的“即将上线”占位 */
+  soon?: boolean
 }
 
-const GAMES: GameDef[] = [
-  { id: '2048', name: '2048', icon: '🔢', desc: '滑动合并数字，凑出 2048', pro: false, difficulties: ['classic'] },
-  { id: 'memory', name: '记忆翻牌', icon: '🃏', desc: '翻开卡片找出相同的一对', pro: false, difficulties: ['easy', 'normal', 'hard'] },
-  { id: 'klotski', name: '数字华容道', icon: '🧩', desc: '滑动数字块，按顺序复原', pro: true, difficulties: ['easy', 'normal'] },
-  { id: 'match3', name: '三消', icon: '💠', desc: '交换相邻色块，连三消除', pro: true, difficulties: ['classic'] }
+const DOM: Record<string, Component> = {
+  '2048': Game2048,
+  memory: GameMemory,
+  klotski: GameKlotski,
+  match3: GameMatch3
+}
+
+const CLASSIC: GameDef[] = [
+  { id: '2048', name: '2048', icon: '🔢', desc: '滑动合并数字，凑出 2048', pro: false, difficulties: ['classic'], kind: 'dom', comp: DOM['2048'] },
+  { id: 'memory', name: '记忆翻牌', icon: '🃏', desc: '翻开卡片找出相同的一对', pro: false, difficulties: ['easy', 'normal', 'hard'], kind: 'dom', comp: DOM['memory'] },
+  { id: 'klotski', name: '数字华容道', icon: '🧩', desc: '滑动数字块，按顺序复原', pro: true, difficulties: ['easy', 'normal'], kind: 'dom', feature: 'pro-library', comp: DOM['klotski'] },
+  { id: 'match3', name: '三消', icon: '💠', desc: '交换相邻色块，连三消除', pro: true, difficulties: ['classic'], kind: 'dom', feature: 'pro-library', comp: DOM['match3'] }
 ]
 
-const DIFF_LABEL: Record<Diff, string> = {
-  easy: '简单',
-  normal: '普通',
-  hard: '困难',
-  classic: '经典'
-}
+const NEON: GameDef[] = [
+  {
+    id: 'glow-match',
+    name: '炫光连消',
+    icon: '✨',
+    desc: '霓虹粒子连消，滑动交换，连锁全屏爆炸',
+    pro: false,
+    difficulties: ['classic'],
+    kind: 'gpu',
+    loader: () => import('./gpu-games/glow-match/glow-match.vue')
+  },
+  {
+    id: 'neon-pulse-soon',
+    name: '霓虹脉冲',
+    icon: '🎵',
+    desc: '单指节奏光轨（即将上线，专业版）',
+    pro: true,
+    difficulties: ['normal'],
+    kind: 'gpu',
+    feature: 'neon-library',
+    soon: true
+  },
+  {
+    id: 'orbit-surge-soon',
+    name: '星轨穿梭',
+    icon: '🌠',
+    desc: '驾驶光体穿越粒子星场（即将上线，专业版）',
+    pro: true,
+    difficulties: ['classic'],
+    kind: 'gpu',
+    feature: 'neon-library',
+    soon: true
+  }
+]
+
+const DIFF_LABEL: Record<Diff, string> = { easy: '简单', normal: '普通', hard: '困难', classic: '经典' }
 
 const billing = useToolBilling(manifest.id)
+const imm = useImmersive()
 const priceText = billing.priceText(billing.plan.priceCents)
-const pro = computed(() => billing.isOwned('freemium-pro') || billing.isOwned('buyout'))
+const proOwned = computed(() => billing.isOwned('freemium-pro') || billing.isOwned('buyout'))
 const buying = ref(false)
 const payMsg = ref('')
+const paywallFor = ref<GameDef | null>(null)
 
-const activeId = ref('2048')
-const difficulty = ref<Diff>('classic')
-const nonce = ref(0)
-const score = ref(0)
 const best = ref<Record<string, number>>({})
+const settings = ref<MiniGameSettings>({ muted: false, vibrate: true, particle: 'auto' })
 let dirty = false
 let flushTimer: ReturnType<typeof setInterval> | null = null
 
-const active = computed(() => GAMES.find((g) => g.id === activeId.value)!)
-const currentKey = computed(() => bestKey(active.value.id, difficulty.value))
-const bestScore = computed(() => best.value[currentKey.value] ?? 0)
-const comp = computed(() => {
-  switch (active.value.id) {
-    case '2048': return Game2048
-    case 'memory': return GameMemory
-    case 'klotski': return GameKlotski
-    default: return GameMatch3
+// —— 专注态（两层结构的第二层）——
+interface Selected {
+  def: GameDef
+  diff: Diff
+}
+const selected = ref<Selected | null>(null)
+const stageComp = shallowRef<Component | null>(null)
+const nonce = ref(0)
+const score = ref(0)
+const combo = ref(0)
+const paused = ref(false)
+
+function bestOf(g: GameDef): number {
+  const k = bestKey(g.id, g.difficulties[0] ?? 'classic')
+  return best.value[k] ?? 0
+}
+
+function unlocked(g: GameDef): boolean {
+  if (!g.pro) return true
+  return billing.canUse(g.feature ?? 'pro-library').allowed || proOwned.value
+}
+
+/** 进入游戏（必须在点击手势内同步触发沉浸/系统全屏）。 */
+function play(g: GameDef, diff?: Diff): void {
+  if (g.soon) return
+  if (!unlocked(g)) {
+    paywallFor.value = g
+    payMsg.value = ''
+    return
   }
-})
-
-function selectGame(g: GameDef) {
-  if (g.id === activeId.value) return
-  activeId.value = g.id
-  difficulty.value = g.difficulties[0]!
+  const d = diff ?? g.difficulties[0] ?? 'classic'
+  void imm.enter() // 手势内尽早请求系统全屏；被拒也保留应用内沉浸
+  if (g.kind === 'gpu' && g.loader) {
+    stageComp.value = defineAsyncComponent({
+      loader: g.loader,
+      loadingComponent: { template: '<div style="color:#9fb4d8;padding:40px;text-align:center">霓虹引擎加载中…</div>' },
+      errorComponent: { template: '<div style="color:#ffb4b4;padding:40px;text-align:center">加载失败，请退出重试。</div>' }
+    })
+  } else {
+    stageComp.value = g.comp ?? null
+  }
+  selected.value = { def: g, diff: d }
   score.value = 0
+  combo.value = 0
+  paused.value = false
   nonce.value++
 }
 
-function setDiff(d: Diff) {
-  if (d === difficulty.value) return
-  difficulty.value = d
-  score.value = 0
-  nonce.value++
-}
+const currentKey = computed(() =>
+  selected.value ? bestKey(selected.value.def.id, selected.value.diff) : ''
+)
 
-function restart() {
-  score.value = 0
-  nonce.value++
-}
-
-function onScore(v: number) {
+function onScore(v: number): void {
   score.value = v
-  if (v > (best.value[currentKey.value] ?? 0)) {
-    best.value = { ...best.value, [currentKey.value]: v }
+  const k = currentKey.value
+  if (k && v > (best.value[k] ?? 0)) {
+    best.value = { ...best.value, [k]: v }
     dirty = true
   }
 }
 
-async function onGameOver() {
-  if (dirty) {
-    await persistState(best.value)
-    dirty = false
-  }
+async function flushBest(): Promise<void> {
+  if (!dirty) return
+  dirty = false
+  await saveBest(best.value)
 }
 
-async function upgrade() {
+function restartStage(): void {
+  score.value = 0
+  combo.value = 0
+  paused.value = false
+  nonce.value++
+}
+
+async function exitStage(): Promise<void> {
+  await flushBest()
+  selected.value = null
+  stageComp.value = null
+  paused.value = false
+  if (imm.active.value) void imm.exit()
+}
+
+async function toggleMute(): Promise<void> {
+  const next = await saveSettings({ muted: !settings.value.muted })
+  settings.value = next.settings
+}
+
+async function upgrade(): Promise<void> {
   if (buying.value) return
   buying.value = true
   payMsg.value = ''
   try {
     await billing.buy('freemium-pro')
     payMsg.value = '专业版已解锁，完整游戏库都可以玩了'
+    paywallFor.value = null
   } catch {
     payMsg.value = '下单未完成，可稍后再试；免费游戏不受影响'
   } finally {
@@ -108,136 +197,196 @@ async function upgrade() {
 }
 
 onMounted(async () => {
-  best.value = (await loadState()).best
-  flushTimer = setInterval(() => {
-    if (dirty) {
-      dirty = false
-      void persistState(best.value)
-    }
-  }, 1500)
+  const state = await loadState()
+  best.value = state.best
+  settings.value = state.settings
+  flushTimer = setInterval(() => void flushBest(), 1500)
 })
 onBeforeUnmount(() => {
   if (flushTimer) clearInterval(flushTimer)
-  if (dirty) void persistState(best.value)
+  void flushBest()
 })
 </script>
 
 <template>
   <div class="mg">
-    <div class="intro card">
-      <p class="intro-line">通勤排队、午休摸鱼，打开即玩。全部在本机离线运行、无广告，单局几分钟，最高分会自动保存在这台设备。</p>
-    </div>
-
-    <div class="game-tabs" role="tablist">
-      <button
-        v-for="g in GAMES"
-        :key="g.id"
-        class="tab"
-        :class="{ on: g.id === activeId }"
-        @click="selectGame(g)"
-      >
-        <span class="tab-ico">{{ g.icon }}</span>
-        <span class="tab-name">{{ g.name }}</span>
-        <span v-if="g.pro && !pro" class="lock">🔒</span>
-      </button>
-    </div>
-
-    <div class="panel card">
-      <div class="bar">
-        <div class="bar-left">
-          <strong class="gname">{{ active.icon }} {{ active.name }}</strong>
-          <span class="gdesc">{{ active.desc }}</span>
-        </div>
-        <div class="bar-right">
-          <div class="sc"><span>本局</span><b>{{ score }}</b></div>
-          <div class="sc"><span>最高</span><b>{{ bestScore }}</b></div>
-          <button class="btn btn-ghost" @click="restart">重新开始</button>
-        </div>
+    <!-- 第一层：选游戏页 -->
+    <template v-if="!selected">
+      <div class="intro card">
+        <p class="intro-line">
+          通勤排队、午休摸鱼，打开即玩。全部本机离线运行、无广告，最高分自动保存在这台设备。
+          点进任意游戏即进入<strong class="neon-txt">全屏沉浸</strong>，画面里不留任何多余信息。
+        </p>
       </div>
 
-      <div v-if="active.difficulties.length > 1" class="diffs">
-        <button
-          v-for="d in active.difficulties"
-          :key="d"
-          class="diff"
-          :class="{ on: d === difficulty }"
-          @click="setDiff(d)"
-        >
-          {{ DIFF_LABEL[d] }}
-        </button>
-      </div>
+      <section class="zone">
+        <h2 class="zone-title">经典益智</h2>
+        <div class="grid">
+          <button v-for="g in CLASSIC" :key="g.id" class="gcard" @click="play(g)">
+            <span class="gc-top">
+              <span class="gc-ico">{{ g.icon }}</span>
+              <span v-if="g.pro && !unlocked(g)" class="lock">🔒</span>
+            </span>
+            <span class="gc-name">{{ g.name }}</span>
+            <span class="gc-desc">{{ g.desc }}</span>
+            <span class="gc-meta">
+              <em v-if="bestOf(g)">最高 {{ bestOf(g) }}</em>
+              <span v-else class="faint">即点即玩</span>
+            </span>
+            <span v-if="g.difficulties.length > 1" class="diffs" @click.stop>
+              <i
+                v-for="d in g.difficulties"
+                :key="d"
+                class="diff-chip"
+                @click="play(g, d)"
+              >{{ DIFF_LABEL[d] }}</i>
+            </span>
+          </button>
+        </div>
+      </section>
 
-      <!-- 免费 / 已解锁：直接玩 -->
-      <component
-        :is="comp"
-        v-if="!active.pro || pro"
-        :key="activeId + ':' + difficulty + ':' + nonce"
-        :difficulty="difficulty === 'classic' ? 'normal' : difficulty"
-        @score="onScore"
-        @gameover="onGameOver"
-      />
+      <section class="zone">
+        <h2 class="zone-title"><span class="neon-txt">炫光 NEON</span> · GPU 粒子全屏</h2>
+        <div class="grid neon-grid">
+          <button
+            v-for="g in NEON"
+            :key="g.id"
+            class="gcard neon-card"
+            :class="{ soon: g.soon, free: !g.pro && !g.soon }"
+            @click="play(g)"
+          >
+            <span class="gc-top">
+              <span class="gc-ico">{{ g.icon }}</span>
+              <span class="badge">
+                <template v-if="g.soon">即将上线</template>
+                <template v-else-if="g.pro">🔒 专业版</template>
+                <template v-else><b class="free-badge">免费</b></template>
+              </span>
+            </span>
+            <span class="gc-name">{{ g.name }}</span>
+            <span class="gc-desc">{{ g.desc }}</span>
+            <span class="gc-meta">
+              <em v-if="bestOf(g)">最高 {{ bestOf(g) }}</em>
+              <span v-else class="faint">{{ g.soon ? '开发中' : '全屏沉浸 · 低端机自动降级' }}</span>
+            </span>
+          </button>
+        </div>
+      </section>
 
-      <!-- 专业版未解锁的游戏：付费墙 -->
-      <div v-else class="paywall">
-        <div class="pw-icon">{{ active.icon }}</div>
-        <h3>「{{ active.name }}」是专业版游戏</h3>
-        <p class="faint">免费版可畅玩 2048、记忆翻牌三档难度。升级专业版一次买断，解锁数字华容道、三消等完整游戏库，后续新游戏持续加入，无广告、无内耗。</p>
+      <!-- 专业版付费墙（在选游戏页内） -->
+      <div v-if="paywallFor" class="card paywall">
+        <div class="pw-icon">{{ paywallFor.icon }}</div>
+        <h3>「{{ paywallFor.name }}」是专业版游戏</h3>
+        <p class="faint">
+          免费版可畅玩 2048、记忆翻牌、炫光连消。升级专业版一次买断，解锁数字华容道、三消以及霓虹脉冲、
+          星轨穿梭等更多 GPU 炫光游戏，后续持续加入，无广告。
+        </p>
         <button class="btn btn-primary big" :disabled="buying" @click="upgrade">
           {{ buying ? '下单中…' : `升级专业版 ${priceText}（买断）` }}
         </button>
         <p v-if="payMsg" class="pay-msg">{{ payMsg }}</p>
-        <button class="link" @click="selectGame(GAMES.find((x) => x.id === '2048')!)">先玩免费的 2048</button>
+        <button class="link" @click="paywallFor = null">先玩免费游戏</button>
       </div>
-    </div>
+    </template>
+
+    <!-- 第二层：纯净全屏专注态 -->
+    <FocusStage
+      v-else
+      :key="'stage-' + selected.def.id + ':' + selected.diff"
+      :title="selected.def.name"
+      :kind="selected.def.kind"
+      :score="selected.def.kind === 'gpu' ? score : undefined"
+      :combo="combo"
+      :muted="settings.muted"
+      v-model:paused="paused"
+      @exit="exitStage"
+      @restart="restartStage"
+      @toggle-mute="toggleMute"
+    >
+      <component
+        :is="stageComp"
+        :key="'g-' + selected.def.id + ':' + selected.diff + ':' + nonce"
+        :difficulty="selected.diff === 'classic' ? 'normal' : selected.diff"
+        :paused="selected.def.kind === 'gpu' ? paused : undefined"
+        v-bind="
+          selected.def.kind === 'gpu'
+            ? { muted: settings.muted, vibrate: settings.vibrate, particle: settings.particle }
+            : {}
+        "
+        @score="onScore"
+        @gameover="flushBest"
+        @combo="(v: number) => (combo = v)"
+      />
+    </FocusStage>
   </div>
 </template>
 
 <style scoped>
-.mg { display: flex; flex-direction: column; gap: 14px; }
+.mg { display: flex; flex-direction: column; gap: 16px; }
 .intro { padding: 14px 18px; }
-.intro-line { margin: 0; color: var(--ink-soft); font-size: 14px; }
-
-.game-tabs {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+.intro-line { margin: 0; color: var(--ink-soft); font-size: 14px; line-height: 1.7; }
+.neon-txt {
+  color: #6d5ef0;
+  background: linear-gradient(90deg, #37c8ff, #8a5cff, #ff5cc8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
-.tab {
+.zone { display: flex; flex-direction: column; gap: 10px; }
+.zone-title { margin: 4px 2px 0; font-size: 15px; color: var(--ink-soft); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+@media (min-width: 720px) {
+  .grid { grid-template-columns: repeat(4, 1fr); }
+  .neon-grid { grid-template-columns: repeat(3, 1fr); }
+}
+.gcard {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 10px 4px;
+  gap: 6px;
+  text-align: left;
+  padding: 14px;
   border: 1px solid var(--line);
   background: var(--surface);
-  border-radius: var(--radius-sm);
-  color: var(--ink-soft);
-  position: relative;
+  border-radius: var(--radius);
+  color: var(--ink);
+  min-height: 132px;
 }
-.tab.on { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-dark); }
-.tab-ico { font-size: 22px; }
-.tab-name { font-size: 13px; font-weight: 600; }
-.lock { position: absolute; top: 4px; right: 6px; font-size: 11px; }
+.gcard:active { transform: scale(0.98); }
+.gc-top { display: flex; align-items: center; justify-content: space-between; }
+.gc-ico { font-size: 26px; }
+.gc-name { font-size: 16px; font-weight: 700; }
+.gc-desc { font-size: 12.5px; color: var(--ink-faint); line-height: 1.5; min-height: 34px; }
+.gc-meta { font-size: 12px; color: var(--ink-faint); }
+.gc-meta em { font-style: normal; color: var(--brand-dark); font-weight: 600; }
+.lock { font-size: 12px; }
+.badge { font-size: 11px; color: var(--ink-faint); }
+.free-badge { color: #fff; background: linear-gradient(90deg, #2bbf8a, #27a0c9); padding: 2px 8px; border-radius: 999px; font-weight: 700; }
 
-.panel { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
-.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.bar-left { display: flex; flex-direction: column; }
-.gname { font-size: 17px; }
-.gdesc { color: var(--ink-faint); font-size: 13px; }
-.bar-right { display: flex; align-items: center; gap: 12px; }
-.sc { display: flex; flex-direction: column; align-items: center; min-width: 52px; font-size: 12px; color: var(--ink-faint); }
-.sc b { font-size: 18px; color: var(--brand-dark); }
+.neon-card {
+  background: linear-gradient(160deg, #0e1430, #141a3a 60%, #1a1030);
+  border-color: rgba(120, 130, 255, 0.35);
+  color: #eaf0ff;
+}
+.neon-card .gc-desc { color: #aab8e0; }
+.neon-card.free { box-shadow: 0 0 18px rgba(90, 120, 255, 0.25); }
+.neon-card.soon { opacity: 0.6; }
 
-.diffs { display: flex; gap: 8px; }
-.diff {
-  border: 1px solid var(--line);
-  background: var(--surface);
+.diffs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.diff-chip {
+  font-style: normal;
+  font-size: 11px;
+  padding: 2px 9px;
   border-radius: 999px;
-  padding: 5px 16px;
-  font-size: 13px;
+  border: 1px solid var(--line);
   color: var(--ink-soft);
+  background: var(--surface);
 }
-.diff.on { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-dark); font-weight: 600; }
+.diff-chip:active { background: var(--brand-soft); }
 
 .paywall {
   display: flex;
@@ -247,9 +396,9 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 26px 18px;
 }
-.pw-icon { font-size: 48px; }
+.pw-icon { font-size: 46px; }
 .paywall h3 { margin: 0; }
-.paywall p { max-width: 460px; margin: 0; font-size: 14px; }
+.paywall p { max-width: 480px; margin: 0; font-size: 14px; line-height: 1.7; }
 .big { padding: 11px 22px; font-size: 16px; }
 .pay-msg { color: var(--brand-dark); font-weight: 600; }
 .link { border: none; background: transparent; color: var(--ink-faint); text-decoration: underline; font-size: 13px; }
