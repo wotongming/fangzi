@@ -250,8 +250,35 @@ async function run() {
       await checkOverflow(page, 'pc-surge')
       await shot(page, 'shot-12-pc-orbit-surge.png')
 
-      // 停在中间等撞击 → 结束（障碍会越来越密）
-      await page.waitForSelector('.surge .over', { timeout: 12000 })
+      // 碰撞收紧为真实像素圆距后，停在原地可能长时间不被擦到；
+      // 改为主动追击“最接近玩家线”的下落障碍，确定性地制造一次撞击 → 结束。
+      await page.mouse.move(field.x + field.width * 0.5, field.y + field.height * 0.7)
+      await page.mouse.down()
+      const chaseDeadline = Date.now() + 10000
+      while (Date.now() < chaseDeadline && !(await page.locator('.surge .over').count())) {
+        const enemyX = await page.evaluate(() => {
+          const f = document.querySelector('.surge .field')
+          if (!f) return null
+          const fr = f.getBoundingClientRect()
+          const en = [...document.querySelectorAll('.surge .orb.enemy')]
+            .map((e) => {
+              const r = e.getBoundingClientRect()
+              return {
+                x: (r.left + r.width / 2 - fr.left) / fr.width,
+                y: (r.top + r.height / 2 - fr.top) / fr.height
+              }
+            })
+            .filter((o) => o.y < 0.9)
+            .sort((a, b) => b.y - a.y)[0]
+          return en ? en.x : null
+        })
+        if (enemyX != null) {
+          await page.mouse.move(field.x + enemyX * field.width, field.y + field.height * 0.7, { steps: 2 })
+        }
+        await page.waitForTimeout(60)
+      }
+      await page.waitForSelector('.surge .over', { timeout: 6000 })
+      await page.mouse.up().catch(() => {})
       // 再来一局：遮罩消失、分数回落到刚开局的极小值（生存分随时间增长，不能要求恒为 0）
       await page.locator('.surge .over-btn').click()
       await page.waitForTimeout(60)

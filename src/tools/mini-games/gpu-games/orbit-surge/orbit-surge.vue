@@ -36,6 +36,17 @@ let starAcc = 0
 let ro: ResizeObserver | null = null
 let dragging = false
 let alive = true
+/** 游戏场 CSS 像素尺寸，用于把归一化坐标换算成像素做精确碰撞（ResizeObserver 维护）。 */
+let viewW = 0
+let viewH = 0
+
+function measureView(): void {
+  const el = fieldEl.value
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  viewW = r.width
+  viewH = r.height
+}
 
 function xFromEvent(clientX: number): number {
   const el = fieldEl.value
@@ -87,7 +98,7 @@ function loop(now: number): void {
   last = now
   if (!props.paused && !st.value.over) {
     emitStarfield(dt)
-    const res = update(st.value, dt)
+    const res = update(st.value, dt, { w: viewW, h: viewH })
     if (st.value.score !== lastScore) {
       lastScore = st.value.score
       emit('score', st.value.score)
@@ -156,7 +167,11 @@ onMounted(async () => {
   } catch {
     backend.value = 'error'
   }
-  ro = new ResizeObserver(() => engine?.resize())
+  ro = new ResizeObserver(() => {
+    measureView()
+    engine?.resize()
+  })
+  measureView()
   if (rootEl.value) ro.observe(rootEl.value)
   // 同步 px 给 E2E/调试读（组件卸载后停止，避免 rAF 泄漏）。
   const sync = (): void => {
