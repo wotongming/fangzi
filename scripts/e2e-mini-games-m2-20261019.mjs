@@ -130,7 +130,7 @@ async function run() {
   {
     const { ctx, page } = await newPage(browser, { width: 1280, height: 800 }, false)
     await gotoPicker(page)
-    await page.locator('.neon-card.free', { hasText: '炫光连消' }).click()
+    await page.locator('.gcard', { hasText: '炫光连消' }).click()
     await page.waitForSelector('.focus-stage', { timeout: 15000 })
     await waitBackend(page, '.glow')
 
@@ -166,7 +166,7 @@ async function run() {
   {
     const { ctx, page } = await newPage(browser, { width: 1280, height: 800 }, false)
     await gotoPicker(page)
-    await page.locator('.neon-card', { hasText: '霓虹脉冲' }).first().click()
+    await page.locator('.gcard', { hasText: '霓虹脉冲' }).first().click()
     await page.waitForSelector('.paywall', { timeout: 5000 })
     const pw = await page.locator('.paywall').innerText()
     if (!pw.includes('19.9')) fail.push(`专业版付费墙应显示 ¥19.90，实际：${pw.slice(0, 120)}`)
@@ -179,7 +179,7 @@ async function run() {
   {
     const { ctx, page } = await newPage(browser, { width: 1280, height: 800 }, true)
     await gotoPicker(page)
-    await page.locator('.neon-card', { hasText: '霓虹脉冲' }).first().click()
+    await page.locator('.gcard', { hasText: '霓虹脉冲' }).first().click()
     await page.waitForSelector('.focus-stage', { timeout: 15000 })
     const backend = await waitBackend(page, '.pulse')
     log('pulse backend =', backend)
@@ -222,7 +222,7 @@ async function run() {
   {
     const { ctx, page } = await newPage(browser, { width: 1280, height: 800 }, true)
     await gotoPicker(page)
-    await page.locator('.neon-card', { hasText: '星轨穿梭' }).first().click()
+    await page.locator('.gcard', { hasText: '星轨穿梭' }).first().click()
     await page.waitForSelector('.focus-stage', { timeout: 15000 })
     const backend = await waitBackend(page, '.surge')
     log('surge backend =', backend)
@@ -267,7 +267,7 @@ async function run() {
     const { ctx, page } = await newPage(browser, { width: 375, height: 812 }, true)
     await gotoPicker(page)
     await checkOverflow(page, 'mobile-picker-m2')
-    await page.locator('.neon-card', { hasText: '霓虹脉冲' }).first().click()
+    await page.locator('.gcard', { hasText: '霓虹脉冲' }).first().click()
     await page.waitForSelector('.focus-stage', { timeout: 15000 })
     await waitBackend(page, '.pulse')
     await page.waitForTimeout(600)

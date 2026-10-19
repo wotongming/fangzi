@@ -39,6 +39,10 @@ function refreshFavorites() {
     .map((id) => toolsStore.byId(id))
     .filter((t): t is RegisteredTool => Boolean(t))
 }
+function removeFav(id: string) {
+  favoritesStore.toggle(id)
+  refreshFavorites()
+}
 
 function resultTool(id: string): RegisteredTool | undefined {
   return toolsStore.byId(id)
@@ -81,22 +85,45 @@ onMounted(() => {
       <button class="manual-hint-close" aria-label="关闭新手引导" @click="dismissManualHint">×</button>
     </div>
 
-    <!-- 搜索主区 -->
+    <!-- 搜索主区（搜索框 + 大家都在问，一个整体） -->
     <section class="hero" :class="{ compact: hasSearched }">
       <h1 v-if="!hasSearched" class="hero-title">说说你遇到的问题，给你开个小方子</h1>
-      <form class="searchbar" @submit.prevent="runSearch()">
-        <input
-          v-model="query"
-          class="search-input"
-          type="text"
-          placeholder="说说你遇到的问题，给你开个小方子"
-          aria-label="描述你遇到的问题"
-          autocomplete="off"
-        />
-        <button class="btn btn-primary prescribe" type="submit" :disabled="toolsStore.searching || !query.trim()">
-          {{ toolsStore.searching ? '开方中…' : '开方子' }}
-        </button>
-      </form>
+      <div class="search-unit">
+        <form class="searchbar" @submit.prevent="runSearch()">
+          <input
+            v-model="query"
+            class="search-input"
+            type="text"
+            placeholder="说说你遇到的问题，给你开个小方子"
+            aria-label="描述你遇到的问题"
+            autocomplete="off"
+          />
+          <button class="btn btn-primary prescribe" type="submit" :disabled="toolsStore.searching || !query.trim()">
+            {{ toolsStore.searching ? '开方中…' : '开方子' }}
+          </button>
+        </form>
+
+        <div v-if="!hasSearched" class="ask">
+          <div class="ask-head">
+            <span class="ask-title">大家都在问</span>
+            <button class="btn btn-ghost ask-shuffle" type="button" @click="reshuffle">换一批</button>
+          </div>
+          <div class="chips">
+            <button
+              v-for="s in samples"
+              :key="s.text"
+              class="chip"
+              type="button"
+              @click="useSample(s.text)"
+            >
+              {{ s.text }}
+            </button>
+          </div>
+          <p v-if="!settings.aiConfigured" class="faint small ai-tip">
+            提示：在「设置」中配置 AI 接口后，可启用向量语义检索，口语化描述也能更准地命中工具。
+          </p>
+        </div>
+      </div>
       <p v-if="hasSearched && outcome" class="mode-hint">
         <template v-if="outcome.mode === 'hybrid'">● 向量 + 关键词混合检索</template>
         <template v-else>● 关键词检索（2-gram + 关键词重叠）</template>
@@ -130,34 +157,16 @@ onMounted(() => {
 
     <!-- 未搜索时的发现页 -->
     <template v-else>
-      <section v-if="favoriteTools.length" class="block">
+      <section v-if="favoriteTools.length" class="block fav-block">
         <div class="block-head">
           <h2>我收藏的工具</h2>
         </div>
-        <div class="grid">
-          <ToolCard v-for="t in favoriteTools" :key="t.manifest.id" :tool="t" />
+        <div class="fav-links">
+          <span v-for="t in favoriteTools" :key="t.manifest.id" class="fav-chip">
+            <RouterLink class="fav-link" :to="`/t/${t.manifest.id}`">{{ t.manifest.name }}</RouterLink>
+            <button class="fav-x" type="button" title="从收藏移除" @click="removeFav(t.manifest.id)">×</button>
+          </span>
         </div>
-      </section>
-
-      <section class="block">
-        <div class="block-head">
-          <h2>大家都在问</h2>
-          <button class="btn btn-ghost" @click="reshuffle">换一批</button>
-        </div>
-        <div class="chips">
-          <button
-            v-for="(s, i) in samples"
-            :key="s.text"
-            class="chip"
-            :style="{ animationDelay: i * 0.4 + 's' }"
-            @click="useSample(s.text)"
-          >
-            {{ s.text }}
-          </button>
-        </div>
-        <p v-if="!settings.aiConfigured" class="faint small ai-tip">
-          提示：在「设置」中配置 AI 接口后，可启用向量语义检索，口语化描述也能更准地命中工具。
-        </p>
       </section>
 
       <section class="block">
@@ -235,11 +244,20 @@ onMounted(() => {
   margin: 0 0 22px;
   letter-spacing: 1px;
 }
+/* 搜索框 + 大家都在问：同一张卡片，一个整体 */
+.search-unit {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 14px;
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+}
 .searchbar {
   display: flex;
   gap: 10px;
-  max-width: 680px;
-  margin: 0 auto;
 }
 .search-input {
   flex: 1;
@@ -247,8 +265,7 @@ onMounted(() => {
   font-size: 16px;
   border: 1.5px solid var(--line);
   border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  background: var(--bg, #fff);
 }
 .search-input:focus {
   outline: none;
@@ -260,6 +277,27 @@ onMounted(() => {
   font-size: 16px;
   border-radius: 12px;
   white-space: nowrap;
+}
+.ask {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+.ask-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.ask-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+.ask-shuffle {
+  font-size: 12.5px;
+  padding: 2px 8px;
 }
 .mode-hint {
   font-size: 12.5px;
@@ -304,37 +342,70 @@ onMounted(() => {
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
 }
 .chip {
   border: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--bg, #fff);
   color: var(--ink-soft);
   border-radius: 999px;
-  padding: 8px 16px;
-  font-size: 13.5px;
-  box-shadow: var(--shadow-sm);
+  padding: 7px 14px;
+  font-size: 13px;
   transition: all 0.15s;
-  animation: floaty 5s ease-in-out infinite;
 }
 .chip:hover {
   border-color: var(--brand);
   color: var(--brand-dark);
   background: var(--brand-soft);
-  transform: translateY(-2px);
-}
-@keyframes floaty {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-3px);
-  }
 }
 .ai-tip {
-  margin-top: 12px;
-  font-size: 12.5px;
+  margin: 12px 0 0;
+  font-size: 12px;
+}
+
+/* 收藏工具：紧凑快速跳转链接（不展示描述） */
+.fav-block {
+  margin-top: 26px;
+}
+.fav-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fav-chip {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.fav-chip:hover {
+  border-color: var(--brand);
+  box-shadow: var(--shadow-sm);
+}
+.fav-link {
+  padding: 7px 6px 7px 14px;
+  font-size: 13.5px;
+  color: var(--ink);
+  text-decoration: none !important;
+  white-space: nowrap;
+}
+.fav-chip:hover .fav-link {
+  color: var(--brand-dark);
+}
+.fav-x {
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 11px;
+  cursor: pointer;
+}
+.fav-x:hover {
+  color: #c0473c;
 }
 .empty {
   padding: 36px 24px;

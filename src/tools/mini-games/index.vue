@@ -8,7 +8,6 @@ import FocusStage from './components/FocusStage.vue'
 import Game2048 from './components/Game2048.vue'
 import GameMemory from './components/GameMemory.vue'
 import GameKlotski from './components/GameKlotski.vue'
-import GameMatch3 from './components/GameMatch3.vue'
 
 type Diff = 'easy' | 'normal' | 'hard' | 'classic'
 type Kind = 'dom' | 'gpu'
@@ -33,15 +32,13 @@ interface GameDef {
 const DOM: Record<string, Component> = {
   '2048': Game2048,
   memory: GameMemory,
-  klotski: GameKlotski,
-  match3: GameMatch3
+  klotski: GameKlotski
 }
 
 const CLASSIC: GameDef[] = [
   { id: '2048', name: '2048', icon: '🔢', desc: '滑动合并数字，凑出 2048', pro: false, difficulties: ['classic'], kind: 'dom', comp: DOM['2048'] },
   { id: 'memory', name: '记忆翻牌', icon: '🃏', desc: '翻开卡片找出相同的一对', pro: false, difficulties: ['easy', 'normal', 'hard'], kind: 'dom', comp: DOM['memory'] },
-  { id: 'klotski', name: '数字华容道', icon: '🧩', desc: '滑动数字块，按顺序复原', pro: true, difficulties: ['easy', 'normal'], kind: 'dom', feature: 'pro-library', comp: DOM['klotski'] },
-  { id: 'match3', name: '三消', icon: '💠', desc: '交换相邻色块，连三消除', pro: true, difficulties: ['classic'], kind: 'dom', feature: 'pro-library', comp: DOM['match3'] }
+  { id: 'klotski', name: '数字华容道', icon: '🧩', desc: '滑动数字块，按顺序复原', pro: true, difficulties: ['easy', 'normal'], kind: 'dom', feature: 'pro-library', comp: DOM['klotski'] }
 ]
 
 const NEON: GameDef[] = [
@@ -230,13 +227,15 @@ onBeforeUnmount(() => {
           <button v-for="g in CLASSIC" :key="g.id" class="gcard" @click="play(g)">
             <span class="gc-top">
               <span class="gc-ico">{{ g.icon }}</span>
-              <span v-if="g.pro && !unlocked(g)" class="lock">🔒</span>
+              <span v-if="!g.pro" class="tag-pill free">免费</span>
+              <span v-else-if="!unlocked(g)" class="tag-pill pro">🔒 专业版</span>
+              <span v-else class="tag-pill owned">✓ 已解锁</span>
             </span>
             <span class="gc-name">{{ g.name }}</span>
             <span class="gc-desc">{{ g.desc }}</span>
             <span class="gc-meta">
               <em v-if="bestOf(g)">最高 {{ bestOf(g) }}</em>
-              <span v-else class="faint">即点即玩</span>
+              <span v-else class="faint">即点即玩 · 全屏沉浸</span>
             </span>
             <span v-if="g.difficulties.length > 1" class="diffs" @click.stop>
               <i
@@ -252,27 +251,19 @@ onBeforeUnmount(() => {
 
       <section class="zone">
         <h2 class="zone-title"><span class="neon-txt">炫光 NEON</span> · GPU 粒子全屏</h2>
-        <div class="grid neon-grid">
-          <button
-            v-for="g in NEON"
-            :key="g.id"
-            class="gcard neon-card"
-            :class="{ soon: g.soon, free: !g.pro && !g.soon }"
-            @click="play(g)"
-          >
+        <div class="grid">
+          <button v-for="g in NEON" :key="g.id" class="gcard" @click="play(g)">
             <span class="gc-top">
               <span class="gc-ico">{{ g.icon }}</span>
-              <span class="badge">
-                <template v-if="g.soon">即将上线</template>
-                <template v-else-if="g.pro">🔒 专业版</template>
-                <template v-else><b class="free-badge">免费</b></template>
-              </span>
+              <span v-if="!g.pro" class="tag-pill free">免费</span>
+              <span v-else-if="!unlocked(g)" class="tag-pill pro">🔒 专业版</span>
+              <span v-else class="tag-pill owned">✓ 已解锁</span>
             </span>
             <span class="gc-name">{{ g.name }}</span>
             <span class="gc-desc">{{ g.desc }}</span>
             <span class="gc-meta">
               <em v-if="bestOf(g)">最高 {{ bestOf(g) }}</em>
-              <span v-else class="faint">{{ g.soon ? '开发中' : '全屏沉浸 · 低端机自动降级' }}</span>
+              <span v-else class="faint">即点即玩 · 全屏沉浸</span>
             </span>
           </button>
         </div>
@@ -283,7 +274,7 @@ onBeforeUnmount(() => {
         <div class="pw-icon">{{ paywallFor.icon }}</div>
         <h3>「{{ paywallFor.name }}」是专业版游戏</h3>
         <p class="faint">
-          免费版可畅玩 2048、记忆翻牌、炫光连消。升级专业版一次买断，解锁数字华容道、三消以及霓虹脉冲、
+          免费版可畅玩 2048、记忆翻牌、炫光连消。升级专业版一次买断，解锁数字华容道以及霓虹脉冲、
           星轨穿梭等更多 GPU 炫光游戏，后续持续加入，无广告。
         </p>
         <button class="btn btn-primary big" :disabled="buying" @click="upgrade">
@@ -348,8 +339,7 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 @media (min-width: 720px) {
-  .grid { grid-template-columns: repeat(4, 1fr); }
-  .neon-grid { grid-template-columns: repeat(3, 1fr); }
+  .grid { grid-template-columns: repeat(3, 1fr); }
 }
 .gcard {
   display: flex;
@@ -362,6 +352,12 @@ onBeforeUnmount(() => {
   border-radius: var(--radius);
   color: var(--ink);
   min-height: 132px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+.gcard:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+  border-color: var(--brand);
 }
 .gcard:active { transform: scale(0.98); }
 .gc-top { display: flex; align-items: center; justify-content: space-between; }
@@ -370,18 +366,27 @@ onBeforeUnmount(() => {
 .gc-desc { font-size: 12.5px; color: var(--ink-faint); line-height: 1.5; min-height: 34px; }
 .gc-meta { font-size: 12px; color: var(--ink-faint); }
 .gc-meta em { font-style: normal; color: var(--brand-dark); font-weight: 600; }
-.lock { font-size: 12px; }
-.badge { font-size: 11px; color: var(--ink-faint); }
-.free-badge { color: #fff; background: linear-gradient(90deg, #2bbf8a, #27a0c9); padding: 2px 8px; border-radius: 999px; font-weight: 700; }
-
-.neon-card {
-  background: linear-gradient(160deg, #0e1430, #141a3a 60%, #1a1030);
-  border-color: rgba(120, 130, 255, 0.35);
-  color: #eaf0ff;
+.tag-pill {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 4px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
 }
-.neon-card .gc-desc { color: #aab8e0; }
-.neon-card.free { box-shadow: 0 0 18px rgba(90, 120, 255, 0.25); }
-.neon-card.soon { opacity: 0.6; }
+.tag-pill.free {
+  color: #fff;
+  background: linear-gradient(90deg, #2bbf8a, #27a0c9);
+}
+.tag-pill.pro {
+  color: var(--ink-soft);
+  background: #f1efe8;
+  border: 1px solid var(--line);
+}
+.tag-pill.owned {
+  color: var(--brand-dark);
+  background: var(--brand-soft);
+}
 
 .diffs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
 .diff-chip {

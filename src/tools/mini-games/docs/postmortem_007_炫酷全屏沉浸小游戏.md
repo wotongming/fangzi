@@ -169,3 +169,31 @@
 - **IndexedDB 落库前净化响应式对象**：Vue reactive Proxy 不能结构化克隆，统一在持久化边界展开为纯对象。
 - **可单测逻辑下沉到无 DOM/无别名文件**：像 normalizeState、fx、quality、match 判定这类纯逻辑放独立模块，毫秒级 node:test 即可拦住守恒/兼容/降档类回归，不必等浏览器 E2E。
 - **无头视觉强制 WebGL2**：GPU 工具的可视/布局/交互验证用 navigator.gpu=undefined 强制降级，稳定且能截图；不要在无头软渲染上断言 WebGPU 上屏像素。
+
+---
+
+# M3 增量（2026-10-19）：去重三消 · 卡片统一 · 指导刷新 · 首页改版
+
+## 改动
+
+1. **下线重复的经典「三消」**：删除 `components/GameMatch3.vue`，并从 `index.vue` 移除其 import、`DOM` 映射与 `CLASSIC` 定义（三处）。**保留 `lib/match3-core.ts`**——炫光连消 glow-match 的 logic/组件依赖它（games.test.ts 的 match3-core 内核用例因此全部保留，仍绿）。付费墙文案、manifest tagline 与 `pro-library` 权益 label、README、两份 guide 中“三消”全部清除。旧 IndexedDB 里 `match3:classic` 历史最高分自然保留在库中、UI 不再展示，不做迁移/清库（零风险）。
+2. **卡片展示风格统一**：去掉炫光区单独的深色 `.neon-card/.neon-grid/.free-badge/.lock/.badge`，经典区与炫光区统一用同一 `.gcard`（白底、同圆角/间距/hover）、同一套徽标 `.tag-pill`（免费=绿蓝渐变、🔒专业版=灰、✓已解锁=品牌浅绿），桌面两区都为 3 列、移动 2 列。meta 文案统一为“即点即玩 · 全屏沉浸”。已购专业版游戏现在显示“✓ 已解锁”，状态更明确。
+3. **用户指导刷新**：页面内 `guide.md`（注册中心 root guide，用户点“用户指导”实际看到的版本）此前停留在 001 旧版——仍列三消、完全没有炫光系列。已整篇重写为覆盖现存 6 款（经典 3 + 炫光 3），含玩法/手势/计分/专业版/画面音效电量/FAQ，并显式说明三消下线原因与“无服务器后端”。pipeline `docs/guide_007` 同步到 v1.3.0。manifest 升 **v1.3.0**。
+4. **首页（HomeView）改版**（同批用户诉求）：① “我收藏的工具”由完整 `ToolCard`（占空间大）改为**紧凑胶囊快速跳转链接**（名称 + ×移除），点击直达工具、×即取消收藏；② “大家都在问”从独立 block 移入搜索框所在的同一张卡片 `.search-unit`（虚线分隔），与搜索成为不可分割的一个整体，搜索后该区随未搜索态一起隐藏；移除 chips 的浮动动画避免整体卡片内抖动。
+
+## 牵连面处理
+
+- E2E：`e2e-mini-games-neon-20261019.mjs` 与 `e2e-mini-games-m2-20261019.mjs` 中所有 `.neon-card*` 选择器改为统一的 `.gcard`；原“点三消弹付费墙 / 已购点三消进 DOM”两处用例改测现存专业版 DOM 游戏**数字华容道 klotski**（点击 `.gc-name`，避开难度 chip）；新增“三消卡片不存在”断言。
+- 历史归档文档（`docs/postmortem_001`、`docs/stage/architect_007`）中的 GameMatch3/三消属当时存档，按归档不回改原则保留。
+- 首页新增 E2E：`scripts/e2e-home-redesign-20261019.mjs`（注入 5 个收藏 + 关闭新手条），断言收藏胶囊数=收藏数、收藏区内无 `.tool-card`、“大家都在问”位于 `.search-unit` 内、胶囊点击正确跳转 `/t/mini-games`、三视口零横向溢出。
+
+## M3 验证覆盖
+
+- vue-tsc 0 错；`npm test` **330/330 全绿**（match3-core 内核用例保留通过，删除 GameMatch3.vue 后无导入残留）；`verify:tools` **27**；`npm run build` 成功，最大单文件仍为 ort wasm ≈13.6MiB <25MiB。
+- E2E（强制 WebGL2）：neon 脚本（含手势回归、付费墙=数字华容道、已购进 klotski DOM、炫光真实滑动 180 分、暂停/重开/退出、三视口 0 溢出）**全过**；m2 脚本（霓虹脉冲真实得分 60、星轨生存 264、手机 0 溢出）**全过**；首页改版脚本 PC/平板/手机三视口**全过**。
+- 真实截图目检：选游戏页 shot-01（两区卡片统一、三消消失、徽标一致）、付费墙 shot-02、已购 klotski shot-06；首页 PC/平板/手机（搜索+大家都在问同卡片、收藏紧凑胶囊）。手机端“收藏标题与底部 Tab 接近”为整页 fullPage 截图对 fixed 底栏的呈现伪影：App.vue 内容区已有 `padding-bottom: tab高+安全区+8px`，真机滚动无遮挡。
+- EdgeOne 限额：本批仅删除 1 个组件、改动少量前端文件与文案，无大资源；总量较 M2（131MiB/138 文件）只减不增，远低于限额。
+
+## M3 仍未做
+
+WebGPU/WGSL 原生后端；主题/色盲模式。
