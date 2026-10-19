@@ -49,6 +49,7 @@
 - 闸门用完整标架 `makeBasis(tangent, −normal, across)` 定向，保证红墙/绿缺口在扭转段朝向正确。
 - 贴面跟随相机：相机 up 取带面 normal，半扭转时画面自然翻滚；`reduceMotion` 时回正世界上、关闭大震屏。
 - three 由 index.vue 动态 `import()`，产物为独立异步 chunk `MobiusRenderer-*.js`（≈0.52 MiB / gzip ≈136 KiB），**不进首屏**。
+- 擦过慢动作（R11 juice 补全）：near / perfect 事件触发短暂时间放缓（near 缩放到 0.42 持续 0.22s，perfect 0.6 持续 0.14s），窗口内缩放从谷底线性回升到 1；实现上**只缩放喂给固定步长累加器的实时 dt**（`acc += realDt*slowScaleNow()`），不改 `STEP`，故逻辑仍确定性、跨刷新率一致，结束后由累加器自然补步（24 步 guard 兜底），连续擦过取更强缩放/更长窗口；`reduceMotion` 开启时不触发，避免加重眩晕。
 
 ### 沉浸与计费
 

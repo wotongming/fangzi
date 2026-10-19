@@ -89,6 +89,15 @@ const audio = new MobiusAudio()
 let raf = 0
 let last = 0
 let acc = 0
+// 擦过/完美对齐触发的短暂慢动作（juice）。只缩放“喂给固定步长累加器的实时 dt”，
+// 不改变 STEP，逻辑仍确定性、跨刷新率一致；结束后累加器自然补步（有 guard 上限）。
+let slowT = 0
+let slowDur = 1
+let slowMin = 1
+const SLOW_SCALE_NEAR = 0.42
+const SLOW_SCALE_PERFECT = 0.6
+const SLOW_DUR_NEAR = 0.22
+const SLOW_DUR_PERFECT = 0.14
 let wakeLock: { release: () => Promise<void> } | null = null
 let resizeObs: ResizeObserver | null = null
 
@@ -129,6 +138,21 @@ async function ensureRenderer(): Promise<boolean> {
   }
 }
 
+function triggerSlow(scale: number, dur: number): void {
+  // 连续擦过时刷新慢动作：取更强（更小）的缩放、更长的窗口
+  slowMin = Math.min(slowMin, scale)
+  if (dur >= slowT) {
+    slowT = dur
+    slowDur = dur
+  }
+}
+function slowScaleNow(): number {
+  // 慢动作窗口内时间缩放从 slowMin 线性回升到 1
+  if (slowT <= 0 || slowDur <= 0) return 1
+  const k = slowT / slowDur // 1 -> 0
+  return slowMin + (1 - slowMin) * (1 - k)
+}
+
 function beginGame(): void {
   state = createRun({})
   startRun(state)
@@ -139,6 +163,9 @@ function beginGame(): void {
   reviveUsed.value = false
   twistWarn.value = false
   acc = 0
+  slowT = 0
+  slowDur = 1
+  slowMin = 1
   showPaywall.value = false
   showTutorial.value = false
   phase.value = 'playing'
@@ -296,10 +323,12 @@ function consumeEvents(): void {
       case 'near':
         audio.near()
         vibrate([10, 30, 10], settings.value.vibrate)
+        if (!settings.value.reduceMotion) triggerSlow(SLOW_SCALE_NEAR, SLOW_DUR_NEAR)
         break
       case 'perfect':
         audio.perfect(comboLevel)
         vibrate([8, 20, 8, 20, 8], settings.value.vibrate)
+        if (!settings.value.reduceMotion) triggerSlow(SLOW_SCALE_PERFECT, SLOW_DUR_PERFECT)
         break
       case 'collect':
         audio.collect()
@@ -337,7 +366,10 @@ function loop(now: number): void {
   last = now
 
   if (phase.value === 'playing' && state && isRunning(state)) {
-    acc += realDt
+    if (slowT > 0) slowT = Math.max(0, slowT - realDt)
+    if (slowT === 0) slowMin = 1
+    const dt = realDt * slowScaleNow() // 慢动作只缩放喂给固定步长的实时 dt
+    acc += dt
     let guard = 0
     while (acc >= STEP && guard++ < 24) {
       step(state, STEP)
