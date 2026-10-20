@@ -130,8 +130,8 @@
 
 ### EdgeOne 限额与 matter chunk
 
-- matter-physics 独立本地 chunk：`assets/matter-physics-*.js` **83.74 KB / gzip 26.21 KB**，已进 SW 预缓存；merge-planet chunk 懒加载后同样预缓存。
-- dist 总量 / 文件数 / 单文件最大值见文末最终构建统计（<5GiB / <20000 / <25MiB 全通过）。
+- matter-physics 独立本地 chunk：`assets/matter-physics-*.js` **83.74 KB / gzip 26.21 KB**，已进 SW 预缓存；merge-planet chunk（17.73 KB / gzip 6.93 KB）懒加载后同样预缓存。
+- EdgeOne 限额（本次构建）：dist 总量 **130.91 MiB**（限 5 GiB）、文件数 **154**（限 20000）、最大单文件 22.90 MiB（既有 onnx，限 25 MiB），全部通过。
 
 ## 可复用经验
 
