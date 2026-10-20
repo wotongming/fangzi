@@ -36,6 +36,8 @@ export interface MoveResult {
   grid: Grid
   /** 本次得分（含连锁加权）；无效步为 0 */
   gained: number
+  /** 本次实际消除的格子总数（用于目标进度统计）；无效步为 0 */
+  removed: number
   /** 连锁波次数 */
   waves: number
   /** 首波被消除的格子（用于粒子定位） */
@@ -48,7 +50,7 @@ function hueAt(v: number): number {
 
 /** 尝试一次交换；返回是否合法及结算结果。不修改输入棋盘。 */
 export function tryMove(input: Grid, a: [number, number], b: [number, number]): MoveResult {
-  const empty: MoveResult = { ok: false, swapped: input, grid: input, gained: 0, waves: 0, cells: [] }
+  const empty: MoveResult = { ok: false, swapped: input, grid: input, gained: 0, removed: 0, waves: 0, cells: [] }
   if (!isAdjacent(a, b)) return empty
   const swapped = cloneGrid(input)
   swap(swapped, a, b)
@@ -71,6 +73,7 @@ export function tryMove(input: Grid, a: [number, number], b: [number, number]): 
     swapped,
     grid: res.grid,
     gained: res.removed * SCORE_PER,
+    removed: res.count,
     waves: res.waves,
     cells
   }

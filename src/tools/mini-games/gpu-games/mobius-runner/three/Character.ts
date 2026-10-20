@@ -1,21 +1,29 @@
 /**
- * 原创卡通奔跑小人（纯 three 几何体程序化拼搭，无任何外部模型/贴图/版权形象）。
+ * 原创 Q 版卡通奔跑小人（纯 three 几何体程序化拼搭，无任何外部模型/贴图/版权形象）。
  * 局部坐标：原点在脚底中心，+X=前进方向（光带切线），+Y=上方（带面法向），+Z=带宽横向。
+ * 造型：大头 Q 版比例、圆润胶囊四肢、卡通三渲二（MeshToonMaterial），需场景配灯光（仅该角色受光）。
  */
 import * as THREE from 'three'
 import type { CharacterDef } from '../game/characters'
 
-const ROOT_SCALE = 0.62
+const ROOT_SCALE = 0.6
 
-function mat(color: number): THREE.MeshBasicMaterial {
-  return new THREE.MeshBasicMaterial({ color })
+// 三渲二阶梯色阶（全角色共享一张 3 阶渐变贴图，配合灯光得到干净的卡通分色）
+const gradientMap = new THREE.DataTexture(new Uint8Array([96, 176, 255]), 3, 1, THREE.RedFormat)
+gradientMap.minFilter = THREE.NearestFilter
+gradientMap.magFilter = THREE.NearestFilter
+gradientMap.generateMipmaps = false
+gradientMap.needsUpdate = true
+
+function mat(color: number): THREE.MeshToonMaterial {
+  return new THREE.MeshToonMaterial({ color, gradientMap })
 }
 
-/** 以顶端为枢轴的肢体：返回 group，网格向下延伸 len。 */
-function limb(w: number, len: number, d: number, color: number): THREE.Group {
+/** 以顶端为枢轴的圆润肢体：胶囊向下延伸，总长度 = len + 2r。 */
+function limb(r: number, len: number, color: number): THREE.Group {
   const g = new THREE.Group()
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, len, d), mat(color))
-  m.position.y = -len / 2
+  const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, 14), mat(color))
+  m.position.y = -(len / 2 + r)
   g.add(m)
   return g
 }
@@ -42,110 +50,145 @@ export function buildCharacter(def: CharacterDef): CharacterRig {
   const skin = mat(def.skin)
   const suitM = mat(def.suit)
   const hairM = mat(def.hair)
-  const dark = mat(0x20243a)
+  const accentM = mat(def.accent)
+  const white = mat(0xffffff)
+  const dark = mat(0x2a2440)
 
   // —— 腿（枢轴在髋部）——
-  const HIP_Y = 0.3
-  const legL = limb(0.09, 0.26, 0.1, def.style === 'hood' ? 0x3a2a86 : 0x2b3357)
-  const legR = limb(0.09, 0.26, 0.1, def.style === 'hood' ? 0x3a2a86 : 0x2b3357)
-  legL.position.set(0, HIP_Y, 0.07)
-  legR.position.set(0, HIP_Y, -0.07)
-  // 鞋
-  const shoeGeo = new THREE.BoxGeometry(0.13, 0.07, 0.11)
+  const HIP_Y = 0.34
+  const legL = limb(0.075, 0.15, def.style === 'hood' ? 0x412f96 : 0x33406b)
+  const legR = limb(0.075, 0.15, def.style === 'hood' ? 0x412f96 : 0x33406b)
+  legL.position.set(0, HIP_Y, 0.072)
+  legR.position.set(0, HIP_Y, -0.072)
+  // 圆头鞋
+  const shoeGeo = new THREE.SphereGeometry(0.1, 16, 12)
   for (const leg of [legL, legR]) {
-    const shoe = new THREE.Mesh(shoeGeo, mat(def.accent))
-    shoe.position.set(0.02, -0.26 + 0.03, 0)
+    const shoe = new THREE.Mesh(shoeGeo, accentM)
+    shoe.scale.set(1.25, 0.62, 1.05)
+    shoe.position.set(0.045, -0.3, 0)
     leg.add(shoe)
   }
   root.add(legL, legR)
 
-  // —— 躯干 ——
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.26, 0.2), suitM)
-  torso.position.y = 0.43
+  // —— 躯干（圆润胶囊，一点点 Q 弹肚皮感）——
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.14, 8, 18), suitM)
+  torso.position.y = 0.5
   body.add(torso)
 
   // —— 手臂（枢轴在肩）——
-  const armL = limb(0.075, 0.23, 0.08, def.skin)
-  const armR = limb(0.075, 0.23, 0.08, def.skin)
-  armL.position.set(0, 0.54, 0.15)
-  armR.position.set(0, 0.54, -0.15)
+  const armL = limb(0.062, 0.13, def.skin)
+  const armR = limb(0.062, 0.13, def.skin)
+  armL.position.set(0, 0.6, 0.158)
+  armR.position.set(0, 0.6, -0.158)
   body.add(armL, armR)
 
-  // —— 头 ——
+  // —— 大头（Q 版：头身比偏大）——
   const head = new THREE.Group()
-  head.position.y = 0.66
+  head.position.y = 0.82
   body.add(head)
-  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.16, 18, 14), skin)
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.2, 26, 20), skin)
   head.add(skull)
-  // 眼睛（朝 +X 前进方向）
-  const eyeGeo = new THREE.SphereGeometry(0.028, 10, 8)
-  const eyeL = new THREE.Mesh(eyeGeo, dark)
-  const eyeR = new THREE.Mesh(eyeGeo, dark)
-  eyeL.position.set(0.145, 0.02, 0.06)
-  eyeR.position.set(0.145, 0.02, -0.06)
-  head.add(eyeL, eyeR)
-  // 腮红
-  const cheekGeo = new THREE.SphereGeometry(0.025, 8, 6)
-  const cheekM = mat(def.accent)
-  const c1 = new THREE.Mesh(cheekGeo, cheekM)
-  const c2 = new THREE.Mesh(cheekGeo, cheekM)
-  c1.position.set(0.13, -0.05, 0.1)
-  c2.position.set(0.13, -0.05, -0.1)
-  c1.scale.set(0.6, 0.6, 0.3)
-  c2.scale.set(0.6, 0.6, 0.3)
-  head.add(c1, c2)
 
-  // —— 风格配饰 ——
+  // 眼睛（朝 +X 前进方向）：眼白 + 深色瞳孔 + 高光
+  const whiteGeo = new THREE.SphereGeometry(0.052, 14, 12)
+  const pupilGeo = new THREE.SphereGeometry(0.028, 12, 10)
+  const hiGeo = new THREE.SphereGeometry(0.01, 8, 6)
+  for (const z of [0.072, -0.072]) {
+    const w = new THREE.Mesh(whiteGeo, white)
+    w.scale.set(0.72, 1.0, 1.0)
+    w.position.set(0.168, 0.02, z)
+    head.add(w)
+    const pu = new THREE.Mesh(pupilGeo, dark)
+    pu.scale.set(0.6, 1.0, 1.0)
+    pu.position.set(0.202, 0.02, z)
+    head.add(pu)
+    const hi = new THREE.Mesh(hiGeo, white)
+    hi.position.set(0.214, 0.034, z)
+    head.add(hi)
+  }
+  // 腮红
+  const cheekGeo = new THREE.SphereGeometry(0.034, 12, 10)
+  for (const z of [0.118, -0.118]) {
+    const c = new THREE.Mesh(cheekGeo, accentM)
+    c.scale.set(0.5, 0.7, 0.4)
+    c.position.set(0.158, -0.052, z)
+    head.add(c)
+  }
+  // 小嘴（朝向 +X 的小扁球）
+  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), dark)
+  mouth.scale.set(0.5, 0.32, 1.0)
+  mouth.position.set(0.19, -0.085, 0)
+  head.add(mouth)
+
+  // —— 风格配饰（保持圆润）——
   if (def.style === 'cap') {
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), hairM)
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(0.214, 22, 14, 0, Math.PI * 2, 0, Math.PI * 0.52),
+      hairM
+    )
     dome.position.y = 0.02
     head.add(dome)
-    const brim = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.03, 0.13), hairM)
-    brim.position.set(0.15, 0.06, 0)
+    const brim = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), hairM)
+    brim.scale.set(1.5, 0.32, 1.1)
+    brim.position.set(0.17, 0.062, 0)
     head.add(brim)
+    const stud = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), accentM)
+    stud.position.set(0, 0.226, 0)
+    head.add(stud)
   } else if (def.style === 'bunny') {
-    for (const z of [0.06, -0.06]) {
-      const ear = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.3, 0.04), hairM)
-      ear.position.set(-0.02, 0.26, z)
-      ear.rotation.z = -0.12
+    for (const z of [0.062, -0.062]) {
+      const ear = limb(0.05, 0.2, def.hair)
+      ear.position.set(-0.02, 0.2, z)
+      ear.rotation.z = -0.14
       head.add(ear)
-      const inner = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.22, 0.045), cheekM)
-      inner.position.set(0.01, 0.26, z)
-      inner.rotation.z = -0.12
-      head.add(inner)
+      const inner = new THREE.Mesh(new THREE.CapsuleGeometry(0.026, 0.15, 4, 10), accentM)
+      inner.position.set(0.012, -0.12, 0)
+      ear.children[0]!.add(inner)
     }
   } else if (def.style === 'cat') {
-    for (const z of [0.09, -0.09]) {
-      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.14, 4), hairM)
-      ear.position.set(0, 0.16, z)
+    for (const z of [0.1, -0.1]) {
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.17, 4), hairM)
+      ear.position.set(0, 0.17, z)
       head.add(ear)
-      const inner = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.08, 4), cheekM)
-      inner.position.set(0.005, 0.16, z)
-      head.add(inner)
+      const inner = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.1, 4), accentM)
+      inner.position.set(0.008, -0.012, 0)
+      ear.add(inner)
     }
-    // 尾巴
-    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.045, 0.26, 8), hairM)
-    tail.position.set(-0.16, 0.42, 0)
-    tail.rotation.z = Math.PI / 2.6
-    body.add(tail)
+    // 圆润微翘尾巴（两节胶囊）
+    const tailG = new THREE.Group()
+    const t1 = new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 0.12, 4, 10), hairM)
+    t1.position.set(0, 0.1, 0)
+    tailG.add(t1)
+    const t2 = new THREE.Mesh(new THREE.CapsuleGeometry(0.038, 0.1, 4, 10), hairM)
+    t2.position.set(0.06, 0.2, 0)
+    tailG.add(t2)
+    tailG.position.set(-0.17, 0.42, 0)
+    tailG.rotation.z = 0.9
+    body.add(tailG)
   } else if (def.style === 'spike') {
-    for (let i = 0; i < 5; i++) {
-      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.13, 6), hairM)
-      const ang = (i / 5) * Math.PI * 2
-      spike.position.set(Math.cos(ang) * 0.05, 0.15, Math.sin(ang) * 0.05)
+    for (let i = 0; i < 6; i++) {
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.15, 6), hairM)
+      const ang = (i / 6) * Math.PI * 2
+      spike.position.set(Math.cos(ang) * 0.04, 0.15, Math.sin(ang) * 0.04)
       spike.rotation.z = -0.5
       head.add(spike)
     }
   } else if (def.style === 'hood') {
-    const hood = new THREE.Mesh(new THREE.SphereGeometry(0.19, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.72), hairM)
+    const hood = new THREE.Mesh(
+      new THREE.SphereGeometry(0.232, 22, 16, 0, Math.PI * 2, 0, Math.PI * 0.72),
+      hairM
+    )
     hood.position.set(-0.02, 0.03, 0)
     head.add(hood)
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.24), mat(def.accent))
-    visor.position.set(0.15, 0.03, 0)
+    // 面罩（圆润）
+    const visor = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 10), accentM)
+    visor.scale.set(0.55, 0.62, 2.2)
+    visor.position.set(0.18, 0.03, 0)
     head.add(visor)
     // 小披风
-    const cape = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.24, 0.22), hairM)
-    cape.position.set(-0.15, 0.44, 0)
+    const cape = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.1, 6, 14), hairM)
+    cape.scale.set(0.32, 1, 0.92)
+    cape.position.set(-0.16, 0.46, 0)
     body.add(cape)
   }
 
@@ -163,7 +206,7 @@ export function buildCharacter(def: CharacterDef): CharacterRig {
       legR.rotation.z = -s * 0.85
       armL.rotation.z = -s * 0.7
       armR.rotation.z = s * 0.7
-      body.position.y = Math.abs(Math.cos(phase)) * 0.035
+      body.position.y = Math.abs(Math.cos(phase)) * 0.04
       body.rotation.z = -0.14
     } else {
       // 待机动画：轻微呼吸，手臂自然
@@ -172,7 +215,7 @@ export function buildCharacter(def: CharacterDef): CharacterRig {
       legR.rotation.z *= 0.8
       armL.rotation.z *= 0.8
       armR.rotation.z *= 0.8
-      body.position.y = Math.sin(phase) * 0.01
+      body.position.y = Math.sin(phase) * 0.012
       body.rotation.z = 0
     }
 

@@ -44,8 +44,9 @@ const STRIPS = 8
 const GATE_POOL = 16
 const SHARD_POOL = 28
 const PARTICLES = 360
-const CAM_BACK = 3.4
-const CAM_AHEAD = 7
+const CAM_BACK = 2.7
+const CAM_UP = 1.85 // 相机在带面法向上的抬高：越大越接近俯瞰，人物不再遮挡前路
+const CAM_AHEAD = 5.2
 
 function disposeObject(obj: THREE.Object3D): void {
   obj.traverse((o) => {
@@ -233,6 +234,20 @@ export class MobiusRenderer {
     this.player.add(this.feetHalo)
     this.setCharacter(this.charId)
     this.scene.add(this.player)
+
+    // 卡通灯光（仅影响三渲二小人；环带/障碍用 MeshBasic 不受光）：
+    // 环境光保证半扭转任何朝向都不死黑；主/补平行光挂到 player 标架内，随小人一起定向翻滚。
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.66))
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.0)
+    keyLight.position.set(0.9, 1.9, 0.85)
+    keyLight.target.position.set(0, 0.45, 0)
+    this.player.add(keyLight)
+    this.player.add(keyLight.target)
+    const fillLight = new THREE.DirectionalLight(0xbfd4ff, 0.4)
+    fillLight.position.set(-0.8, 0.9, -0.8)
+    fillLight.target.position.set(0, 0.45, 0)
+    this.player.add(fillLight)
+    this.player.add(fillLight.target)
 
     // 粒子池
     this.pPos = new Float32Array(PARTICLES * 3)
@@ -464,7 +479,7 @@ export class MobiusRenderer {
     this.tmp
       .set(backF.center.x, backF.center.y, backF.center.z)
       .addScaledVector(new THREE.Vector3(backF.across.x, backF.across.y, backF.across.z), this.smoothedLane)
-      .addScaledVector(new THREE.Vector3(backF.normal.x, backF.normal.y, backF.normal.z), 0.55)
+      .addScaledVector(new THREE.Vector3(backF.normal.x, backF.normal.y, backF.normal.z), CAM_UP)
     this.camPos.copy(this.tmp)
     this.look.set(frame.center.x, frame.center.y, frame.center.z).addScaledVector(
       new THREE.Vector3(frame.tangent.x, frame.tangent.y, frame.tangent.z),

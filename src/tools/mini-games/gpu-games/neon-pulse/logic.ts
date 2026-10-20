@@ -24,6 +24,16 @@ export interface PulseNote {
   id: number
   lane: number
   y: number
+  /** 谱面模式下该音符对应的 MIDI 音高（命中即奏响）；随机模式为空。 */
+  midi?: number | null
+}
+
+/** 谱面事件：在 spawnAt 时刻于顶部生成，预计在 arrival 时刻抵达判定线。 */
+export interface ChartEvent {
+  spawnAt: number
+  arrival: number
+  lane: number
+  midi: number | null
 }
 
 export interface PulseState {
@@ -33,12 +43,26 @@ export interface PulseState {
   best: number
   misses: number
   over: boolean
+  /** 是否因完整演奏完曲目而结束（true=通关，false=漏击失败）。 */
+  win: boolean
   elapsed: number
-  /** 下一次生成音符的时刻（秒）。 */
+  /** 下一次生成音符的时刻（秒）——随机模式使用。 */
   nextSpawn: number
   nextId: number
   /** 上一生成轨道，避免连续重复过于单调。 */
   lastLane: number
+  /** random=原随机模式；song=按经典旋律谱面驱动。 */
+  mode: 'random' | 'song'
+  songName?: string
+  /** 谱面模式：待生成的事件序列（已按 spawnAt 排序）。 */
+  chart?: ChartEvent[]
+  chartPos?: number
+  /** 谱面模式恒定下落速度（归一化/秒）。 */
+  fallV?: number
+  /** 谱面事件是否已全部生成。 */
+  spawnDone?: boolean
+  /** 谱面全部音符离开判定区后判定通关的时刻。 */
+  songEndAt?: number
 }
 
 export function newPulse(best = 0): PulseState {
@@ -49,11 +73,70 @@ export function newPulse(best = 0): PulseState {
     best,
     misses: 0,
     over: false,
+    win: false,
     elapsed: 0,
     nextSpawn: 0.5,
     nextId: 1,
-    lastLane: -1
+    lastLane: -1,
+    mode: 'random'
   }
+}
+
+/** 音符从顶部生成到抵达判定线的固定旅行时间（秒），保证谱面节奏公平。 */
+export const CHART_TRAVEL = 1.6
+/** 曲目开始前的准备时间（秒）。 */
+export const CHART_LEAD = 1.8
+/** 最后一个音符到达后多久判定整曲结束（秒）。 */
+export const CHART_TAIL = 1.4
+
+/**
+ * 将一首公有领域旋律编译成三轨下落谱面：
+ * 音高按整首音域三等分映射到 3 条轨道（音越高轨道编号越大），休止符只空拍不生成音符。
+ */
+export function buildChart(
+  seq: Array<[number | null, number]>,
+  beatSec: number
+): { events: ChartEvent[] } {
+  const sounded = seq.filter((n): n is [number, number] => n[0] != null).map((n) => n[0] as number)
+  const lo = Math.min(...sounded)
+  const hi = Math.max(...sounded)
+  const span = hi - lo
+  const laneOf = (midi: number): number => {
+    if (span <= 0) return 1
+    const lane = Math.floor(((midi - lo) / (span + 1)) * LANES)
+    return Math.max(0, Math.min(LANES - 1, lane))
+  }
+  const events: ChartEvent[] = []
+  let t = CHART_LEAD
+  for (const [midi, beats] of seq) {
+    const dur = Math.max(0.08, beats * beatSec)
+    if (midi != null) {
+      events.push({ spawnAt: t - CHART_TRAVEL, arrival: t, lane: laneOf(midi), midi })
+    }
+    t += dur
+  }
+  return { events }
+}
+
+/** 以某首经典旋律开始一局谱面模式。 */
+export function newPulseFromSong(
+  best: number,
+  songName: string,
+  seq: Array<[number | null, number]>,
+  beatSec: number
+): PulseState {
+  const s = newPulse(best)
+  s.mode = 'song'
+  s.songName = songName
+  const { events } = buildChart(seq, beatSec)
+  s.chart = events
+  s.chartPos = 0
+  s.fallV = (HIT_Y + 0.04) / CHART_TRAVEL
+  s.spawnDone = false
+  s.songEndAt = events.length
+    ? events[events.length - 1]!.arrival + CHART_TAIL
+    : CHART_LEAD + CHART_TAIL
+  return s
 }
 
 /** 下落速度（归一化/秒），随时间从 0.42 缓增到 0.9。 */
@@ -88,18 +171,34 @@ export function update(state: PulseState, dt: number): UpdateResult {
   if (state.over || dt <= 0) return res
   state.elapsed += dt
 
-  // 生成
-  while (state.elapsed >= state.nextSpawn) {
-    const lane = pickLane(state)
-    const note: PulseNote = { id: state.nextId++, lane, y: -0.04 }
-    state.notes.push(note)
-    res.spawned.push(note)
-    state.lastLane = lane
-    state.nextSpawn += intervalAt(state.elapsed)
+  let v: number
+  if (state.mode === 'song') {
+    v = state.fallV ?? (HIT_Y + 0.04) / CHART_TRAVEL
+    // 按谱面事件时间点生成
+    const chart = state.chart ?? []
+    while ((state.chartPos ?? 0) < chart.length && chart[state.chartPos!]!.spawnAt <= state.elapsed) {
+      const ev = chart[state.chartPos!]!
+      const note: PulseNote = { id: state.nextId++, lane: ev.lane, y: -0.04, midi: ev.midi }
+      state.notes.push(note)
+      res.spawned.push(note)
+      state.lastLane = ev.lane
+      state.chartPos = (state.chartPos ?? 0) + 1
+    }
+    if ((state.chartPos ?? 0) >= chart.length) state.spawnDone = true
+  } else {
+    // 随机模式生成
+    while (state.elapsed >= state.nextSpawn) {
+      const lane = pickLane(state)
+      const note: PulseNote = { id: state.nextId++, lane, y: -0.04 }
+      state.notes.push(note)
+      res.spawned.push(note)
+      state.lastLane = lane
+      state.nextSpawn += intervalAt(state.elapsed)
+    }
+    v = speedAt(state.elapsed)
   }
 
   // 下落
-  const v = speedAt(state.elapsed)
   const remain: PulseNote[] = []
   for (const n of state.notes) {
     n.y += v * dt
@@ -113,10 +212,19 @@ export function update(state: PulseState, dt: number): UpdateResult {
   if (res.missed > 0) {
     state.misses += res.missed
     state.combo = 0
-    if (state.misses >= MAX_MISS) {
+    // 随机模式漏满即结束；谱面模式允许带着少量漏击演奏完整首曲目（不因失误中途打断）。
+    if (state.mode === 'random' && state.misses >= MAX_MISS) {
       state.over = true
       if (state.score > state.best) state.best = state.score
     }
+  }
+
+  // 谱面模式：全部音符处理完且过了尾音 → 通关
+  if (state.mode === 'song' && state.spawnDone && state.notes.length === 0 &&
+      state.elapsed >= (state.songEndAt ?? state.elapsed)) {
+    state.over = true
+    state.win = true
+    if (state.score > state.best) state.best = state.score
   }
   return res
 }

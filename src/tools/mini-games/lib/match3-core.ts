@@ -105,8 +105,10 @@ function collapseOnce(g: Grid, rng: () => number): number {
 
 export interface ResolveResult {
   grid: Grid
-  /** 总消除块数（含连锁） */
+  /** 总消除块数（含连锁加权，用于计分） */
   removed: number
+  /** 实际被消除的物理块数（不加连锁权重，用于目标进度统计） */
+  count: number
   /** 连锁波次数 */
   waves: number
 }
@@ -115,14 +117,16 @@ export interface ResolveResult {
 export function resolve(input: Grid, rng: () => number = Math.random): ResolveResult {
   const g = cloneGrid(input)
   let removed = 0
+  let count = 0
   let waves = 0
   // 首波有连珠才计分；补充产生的新连珠作为连锁
   let n = collapseOnce(g, rng)
-  if (n === 0) return { grid: input, removed: 0, waves: 0 }
+  if (n === 0) return { grid: input, removed: 0, count: 0, waves: 0 }
   while (n > 0) {
     removed += n * (waves + 1) // 连锁加权
+    count += n // 实际块数
     waves++
     n = collapseOnce(g, rng)
   }
-  return { grid: g, removed, waves }
+  return { grid: g, removed, count, waves }
 }

@@ -138,6 +138,37 @@ export class NeonAudio {
     this.pulse(Math.min(1, 0.6 + intensity * 0.12))
   }
 
+  /**
+   * 按指定频率奏响一个“旋律音符”（霓虹脉冲谱面模式命中时调用）。
+   * 三角波 + 八度泛音 + 轻微延音，听感接近八音盒/钢琴单音；strong 更亮。
+   */
+  tone(freq: number, strong = false): void {
+    if (!this.ready() || !(freq > 0)) return
+    const ctx = this.ctx!
+    const t = ctx.currentTime
+    const osc = ctx.createOscillator()
+    const osc2 = ctx.createOscillator()
+    const gain = ctx.createGain()
+    const g2 = ctx.createGain()
+    osc.type = 'triangle'
+    osc2.type = 'sine'
+    osc.frequency.setValueAtTime(freq, t)
+    osc2.frequency.setValueAtTime(freq * 2, t) // 高八度泛音，更晶莹
+    g2.gain.value = 0.22
+    const peak = strong ? 0.3 : 0.24
+    gain.gain.setValueAtTime(0.0001, t)
+    gain.gain.exponentialRampToValueAtTime(peak, t + 0.012)
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.42)
+    osc.connect(gain)
+    osc2.connect(g2).connect(gain)
+    gain.connect(this.master!)
+    osc.start(t)
+    osc2.start(t)
+    osc.stop(t + 0.44)
+    osc2.stop(t + 0.44)
+    this.pulse(strong ? 0.8 : 0.55)
+  }
+
   /** 记录一次节拍能量（0..1），随时间指数回落。 */
   pulse(strength: number): void {
     this.beatValue = Math.max(this.beatValue, Math.min(1, strength))

@@ -197,3 +197,39 @@
 ## M3 仍未做
 
 WebGPU/WGSL 原生后端；主题/色盲模式。
+
+# M4 增量（2026-10-20）：莫比环角色美化/俯瞰 · 炫光目标化 · 霓虹经典旋律
+
+## 改动
+
+1. **莫比环跑酷**
+   - `mobius-runner/three/Character.ts` 整体重写：扁平方块 → **Q 版三渲二**（MeshToonMaterial 共享一张 3 阶 DataTexture gradientMap；大头球体 + 胶囊躯干/四肢、眼白/瞳孔/高光、腮红、小嘴、圆头鞋、圆润配饰；5 款原创造型 cap/bunny/cat/spike/hood 保留并圆润化，ROOT_SCALE=0.6）。
+   - `MobiusRenderer.ts`：相机由"又低又近"（CAM_BACK=3.4、法向抬高 0.55、FOV72、CAM_AHEAD=7）抬升为**约 45° 俯瞰追尾**（CAM_BACK=2.7、CAM_UP=1.85、CAM_AHEAD=5.2），小人落画面下方、前路无遮挡；新增 AmbientLight(0.66) + 挂在 player 标架下的 keyLight(1.0)/fillLight(0.4)，半扭转任意朝向都不死黑。
+2. **炫光连消**
+   - `lib/match3-core.ts`：ResolveResult 增加实际物理消除块数 `count`（与含连锁加权的计分量 `removed` 区分）。
+   - `glow-match/logic.ts`：MoveResult 增加 `removed`（=res.count），导出 `BurstCell`。
+   - `glow-match.vue`：粒子 12→18/26、加 sizeScale/life，连锁中心补 30 粒大爆发；新增格位扩散爆圈 `.pop`、全屏 radial `.flash`、更强震屏；新增 **TARGET_REMOVED=60** 目标，顶部"目标：消除 60 块 · 还差 N"+渐变进度条；达成置 finished、庆祝爆发、emit `gameover`、弹通关结算卡（含"再来一局"组件内重置）；finished 时锁输入。
+3. **霓虹脉冲**
+   - 新增 `neon-pulse/melodies.ts`：5 首**公有领域**旋律（小星星/两只老虎/欢乐颂/致爱丽丝/卡农）以 MIDI 音高+时值的音符序列编码，附 `midiToFreq`；零音频文件、零版权录音。
+   - `logic.ts`：**增量**加入谱面模式（保留全部旧导出与随机模式，旧单测不回归）——`ChartEvent`/`buildChart`（整首音域三等分映射到 3 轨、休止符空拍、固定 CHART_TRAVEL=1.6s 旅行时间）/`newPulseFromSong`/`win` 标志；谱面模式按事件时间点确定性生成、恒定下落速度，漏击不中途判负、整曲音符处理完即 `win`。
+   - `audio/synth.ts`：新增 `tone(freq, strong)`，三角波+高八度泛音+指数包络，命中即按旋律音高实时合成"八音盒"音。
+   - `neon-pulse.vue`：新增**选曲页**（5 曲目 + "∞ 自由脉冲"）、当前曲名标签、命中奏响 `audio.tone(midiToFreq)`、通关/失败结算（"再来一首/换一首"）、emit `gameover`。
+
+## 版权与合规
+
+仅内置**公有领域**旋律（传统民歌 + 贝多芬/帕赫贝尔古典，作者逝世均远超版权期），用游戏自带程序化 Web Audio 合成器演奏；**不内置任何近现代流行曲旋律或录音**，规避版权风险。现代流行曲因仍受版权保护，明确不做。
+
+## M4 验证覆盖
+
+- vue-tsc **0 错**（修掉 Character.ts 三处把 MeshToonMaterial 当 color number 传入的类型错误：手臂/兔耳改用 `def.skin`/`def.hair`）。
+- 单测：新增 `test/mini-games-neon-songs.test.ts` 4 例（谱面编译排序/轨道范围/旅行时间、**5 首曲目都能完整演奏到 win 且不因漏击中途失败**、命中返回 midi 并得分、midiToFreq A4/C5）；相关 neon 两文件 **27/27**；`npm test` 全量 **366/366 全绿**（基线 362 + 新增 4）。
+- `verify:tools` **28**；`npm run build` 成功，PWA precache 正常，最大单文件 ort wasm ≈13.6MiB。
+- 三视口 GPU E2E（强制 WebGL2，`scripts/e2e-mini-games-trio-20261020.mjs`，注入已购专业版以进入 pro 游戏）：莫比环 PC/手机 canvas backing 正常且 **0 横向溢出**、截图肉眼确认俯瞰视角前路无遮挡、Q 版小人可见；炫光 PC/平板目标 HUD 开局=60、真实滑动后"还差"从 60 降到 57（进度链路真实打通）、0 溢出；霓虹 PC/平板/手机选曲 6 按钮（5 曲+自由）齐全、进入后曲名标签正确、谱面音符真实下落、0 溢出；全程无 pageerror（SW abort 噪音过滤）。**全过**。
+- 截图有效性（均非 0 字节、PNG 可打开、与文案一致）：mobius-pc-run 28KB、mobius-mobile-run 165KB、glow-pc-effects 240KB、glow-tablet-effects 253KB、neon-mobile-picker 160KB、neon-pc/tablet-playing 各≈16KB。
+- EdgeOne 限额复核（dist 实测）：总量 **131 MiB**（<5GiB）、文件 **144**（<20000）、单文件最大 **13.6 MiB**（<25MiB）。本批新增仅少量 TS/Vue/测试/E2E 与截图，无大资源。
+
+## M4 仍未做
+
+- 霓虹旋律模式当前为"漏击不判负、只影响得分"，后续可加逐键精确计分/评级（S/A/B）与节拍校准。
+- 炫光目标块数当前固定 60，可按难度分档。
+- WebGPU 原生后端、主题/色盲模式仍未做。
