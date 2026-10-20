@@ -1,7 +1,7 @@
 /**
  * 合成大星球（Merge Planet）—— 纯玩法逻辑（无 DOM / Canvas / matter 依赖，可单测）。
  *
- * 负责：11 级进化链定义、同级合并判定与升级结果、计分与连击加成、投放冷却/下落占用、
+ * 负责：19 级进化链定义、同级合并判定与升级结果、计分与连击加成、投放冷却/下落占用、
  * 越顶警戒线持续计时（瞬时擦过不死）、最高分纯函数。物理引擎与画面渲染只消费这里的结论。
  *
  * 美术全部由本游戏渲染层按通用天体概念程序化绘制，不含任何第三方版权 IP 素材。
@@ -25,21 +25,34 @@ export interface TierDef {
 }
 
 /**
- * 进化链（11 级）：陨石 → 月球 → 水星 → 火星 → 地球 → 海王星 → 天王星 → 土星(带环) → 木星 → 太阳 → 黑洞。
- * 半径逐级增大；分值按等级平方/指数递增；合成第 10 级（黑洞）即通关大爆发结算。
+ * 进化链（19 级）：陨石→月球→水星→火星→地球→海王星→天王星→土星(环)→木星→太阳
+ * →红巨星→白矮星→中子星→黑洞→球状星团→星系→星系团→超星系团→宇宙(终极)。
+ *
+ * 游戏化排序（非真实物理直径）：天体按「行星 → 恒星一生 → 宇宙结构尺度」递进；
+ * 白矮星/中子星真实体积小，这里按等阶画大以呈现"高能量"。radius 为 0..1 归一化系数，
+ * 物理体半径由布局纯函数 ballRadius() 按容器短边换算（最大球直径 ≤ 短边 0.34）。
+ * 分值按等级平方/指数递增、高级跃迁分差更大；合成第 18 级（宇宙）即通关大爆发结算。
  */
 export const TIERS: TierDef[] = [
-  { index: 0, id: 'meteorite', name: '陨石', radius: 0.42, baseScore: 10, hue: 24, sat: 14, light: 42 },
-  { index: 1, id: 'moon', name: '月球', radius: 0.5, baseScore: 20, hue: 220, sat: 8, light: 66 },
-  { index: 2, id: 'mercury', name: '水星', radius: 0.58, baseScore: 30, hue: 28, sat: 18, light: 58 },
-  { index: 3, id: 'mars', name: '火星', radius: 0.66, baseScore: 50, hue: 12, sat: 62, light: 52 },
-  { index: 4, id: 'earth', name: '地球', radius: 0.74, baseScore: 80, hue: 210, sat: 70, light: 46 },
-  { index: 5, id: 'neptune', name: '海王星', radius: 0.82, baseScore: 120, hue: 222, sat: 78, light: 48 },
-  { index: 6, id: 'uranus', name: '天王星', radius: 0.9, baseScore: 180, hue: 174, sat: 58, light: 66 },
-  { index: 7, id: 'saturn', name: '土星', radius: 1.0, baseScore: 260, hue: 42, sat: 48, light: 66 },
-  { index: 8, id: 'jupiter', name: '木星', radius: 1.1, baseScore: 380, hue: 32, sat: 52, light: 64 },
-  { index: 9, id: 'sun', name: '太阳', radius: 1.2, baseScore: 550, hue: 44, sat: 96, light: 58 },
-  { index: 10, id: 'blackhole', name: '黑洞', radius: 1.3, baseScore: 1000, hue: 262, sat: 70, light: 30 }
+  { index: 0, id: 'meteorite', name: '陨石', radius: 0.06, baseScore: 10, hue: 24, sat: 14, light: 42 },
+  { index: 1, id: 'moon', name: '月球', radius: 0.11, baseScore: 20, hue: 220, sat: 8, light: 66 },
+  { index: 2, id: 'mercury', name: '水星', radius: 0.16, baseScore: 30, hue: 28, sat: 18, light: 58 },
+  { index: 3, id: 'mars', name: '火星', radius: 0.21, baseScore: 50, hue: 12, sat: 62, light: 52 },
+  { index: 4, id: 'earth', name: '地球', radius: 0.26, baseScore: 80, hue: 210, sat: 70, light: 46 },
+  { index: 5, id: 'neptune', name: '海王星', radius: 0.31, baseScore: 120, hue: 222, sat: 78, light: 48 },
+  { index: 6, id: 'uranus', name: '天王星', radius: 0.36, baseScore: 180, hue: 174, sat: 58, light: 66 },
+  { index: 7, id: 'saturn', name: '土星', radius: 0.41, baseScore: 260, hue: 42, sat: 48, light: 66 },
+  { index: 8, id: 'jupiter', name: '木星', radius: 0.47, baseScore: 380, hue: 32, sat: 52, light: 64 },
+  { index: 9, id: 'sun', name: '太阳', radius: 0.53, baseScore: 550, hue: 44, sat: 96, light: 58 },
+  { index: 10, id: 'redgiant', name: '红巨星', radius: 0.6, baseScore: 800, hue: 16, sat: 85, light: 52 },
+  { index: 11, id: 'whitedwarf', name: '白矮星', radius: 0.66, baseScore: 1200, hue: 210, sat: 60, light: 90 },
+  { index: 12, id: 'neutronstar', name: '中子星', radius: 0.71, baseScore: 1800, hue: 205, sat: 90, light: 72 },
+  { index: 13, id: 'blackhole', name: '黑洞', radius: 0.77, baseScore: 2600, hue: 262, sat: 70, light: 30 },
+  { index: 14, id: 'globular', name: '球状星团', radius: 0.82, baseScore: 3800, hue: 45, sat: 60, light: 78 },
+  { index: 15, id: 'galaxy', name: '星系', radius: 0.87, baseScore: 5500, hue: 220, sat: 60, light: 62 },
+  { index: 16, id: 'galaxycluster', name: '星系团', radius: 0.91, baseScore: 8000, hue: 190, sat: 40, light: 66 },
+  { index: 17, id: 'supercluster', name: '超星系团', radius: 0.95, baseScore: 12000, hue: 280, sat: 45, light: 58 },
+  { index: 18, id: 'cosmos', name: '宇宙', radius: 1, baseScore: 18000, hue: 260, sat: 70, light: 40 }
 ]
 
 export const TIER_COUNT = TIERS.length
@@ -53,15 +66,17 @@ export const DROP_COOLDOWN_MS = 380
 export const DEATH_LINE_MS = 1750
 /** 警戒线持续超过该比例即开始闪烁警告（未到判负）。 */
 export const WARNING_RATIO = 0.5
-/** 可直接投出的最高初级（开局只在前 4 级里随机）。 */
-export const MAX_SPAWN_TIER = 3
+/** 可直接投出的最高初级（开局只在前 5 级 陨石~地球 里随机，高级只能靠合成）。 */
+export const MAX_SPAWN_TIER = 4
+/** 投放池权重（陨石~地球，低级更常见，合计归一）。 */
+export const SPAWN_WEIGHTS: readonly number[] = [5, 3, 2, 1, 1]
 
 /** 同级才合并。 */
 export function sameTier(a: number, b: number): boolean {
   return a === b && a >= 0 && a <= FINAL_TIER
 }
 
-/** 合成升级：返回上一级 index；已是终极（黑洞）返回 null（不可再合）。 */
+/** 合成升级：返回上一级 index；已是终极（宇宙 18）返回 null（不可再合）。 */
 export function nextTierIndex(current: number): number | null {
   if (current < 0 || current >= FINAL_TIER) return null
   return current + 1
@@ -84,16 +99,14 @@ export function mergeScore(producedTier: number, combo: number): number {
 }
 
 /**
- * 投放随机：只在前 MAX_SPAWN_TIER 级内按权重随机（低级更常见）。
- * 注入 rng() ∈ [0,1)，便于单测复现；不注入时退化为 Math.random。
+ * 投放随机：只在前 MAX_SPAWN_TIER 级（陨石~地球）内按 SPAWN_WEIGHTS 权重随机（低级更常见）。
+ * 高级天体只能靠合成获得，绝不直接投出。注入 rng() ∈ [0,1) 便于单测复现；不注入退化为 Math.random。
  */
 export function rollSpawnTier(rng: () => number = Math.random): number {
-  // 权重：陨石 5、月球 3、水星 2、火星 1（合计 11）。
-  const weights = [5, 3, 2, 1]
-  const total = weights.reduce((s, w) => s + w, 0)
+  const total = SPAWN_WEIGHTS.reduce((s, w) => s + w, 0)
   let r = rng() * total
   for (let i = 0; i <= MAX_SPAWN_TIER; i++) {
-    const w = weights[i] ?? 1
+    const w = SPAWN_WEIGHTS[i] ?? 1
     if (r < w) return i
     r -= w
   }
@@ -165,6 +178,39 @@ export function wallAimRange(width: number, radius: number, edge = 2): { min: nu
     return { min: c, max: c }
   }
   return { min, max }
+}
+
+// —— 布局半径：19 级归一化系数 → 像素半径（按容器短边，最大球直径 ≤ 短边 0.34）——
+
+function clampNum(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v))
+}
+
+/** 最小球（陨石）像素半径，随短边缩放并夹取。 */
+export function minBallRadius(shortEdge: number): number {
+  return clampNum(shortEdge * 0.05, 11, 18)
+}
+
+/** 最大球（宇宙）像素半径；直径 2r ≤ 0.34×短边，夹取上限防止顶满/穿墙。 */
+export function maxBallRadius(shortEdge: number): number {
+  return clampNum(shortEdge * 0.17, 30, 62)
+}
+
+/**
+ * 某级像素半径：在 minBallRadius..maxBallRadius 之间按归一化 radius 线性插值。
+ * 高级段系数间距收窄（亚线性收敛），避免后几级尺寸暴涨导致无法并排堆叠。
+ */
+export function ballRadius(tierIndex: number, shortEdge: number): number {
+  const t = TIERS[tierIndex]
+  if (!t) return minBallRadius(shortEdge)
+  const lo = minBallRadius(shortEdge)
+  const hi = maxBallRadius(shortEdge)
+  return lo + (hi - lo) * t.radius
+}
+
+/** 最大球直径占短边比例（应 ≤ 0.34），供单测/布局自检。 */
+export function maxDiameterRatio(shortEdge: number): number {
+  return (maxBallRadius(shortEdge) * 2) / shortEdge
 }
 
 // —— 重力感应：设备 gamma（左右倾角，度）平滑映射 world.gravity.x ——

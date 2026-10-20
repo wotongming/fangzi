@@ -137,6 +137,38 @@ async function decorateBoard(page) {
 }
 
 /**
+ * 摆出一段高级天体（不同级互不合并），落到底部安全区：断言不误触死亡线，再截图。
+ * placements: [tier, 横向 0..1 比例]
+ */
+async function stageSegment(page, placements, shotName) {
+  await page.evaluate((list) => {
+    const root = document.querySelector('.mp').getBoundingClientRect()
+    // 抬到中下部，截图时大球完整落在画面内（不等其沉到底部被裁切）
+    const baseY = root.height * 0.58
+    for (const [t, fx] of list) window.__mergePlanet.spawn(t, root.width * fx, baseY)
+  }, placements)
+  await page.waitForTimeout(700)
+  const info = await page.evaluate(() => ({
+    phase: window.__mergePlanet.phase(),
+    w: document.querySelector('.mp').getBoundingClientRect().width
+  }))
+  log(`stage ${shotName} phase=${info.phase} width=${Math.round(info.w)}`)
+  if (info.phase !== 'play') fail.push(`摆高级天体时误触结束 phase=${info.phase}`)
+  await shot(page, shotName)
+}
+
+/** 满级(18 宇宙)通关：经测试钩子触发终极结算，断言 win 且卡片显示「宇宙」。 */
+async function winToCosmos(page) {
+  await page.evaluate(() => window.__mergePlanet.showWin())
+  await page.waitForTimeout(400)
+  const phase = await phaseNow(page)
+  const card = await page.locator('.mp-card').innerText()
+  log('满级通关 phase =', phase, '|', card.replace(/\n/g, ' ').slice(0, 32))
+  if (phase !== 'win') fail.push('showWin 未进入 win 通关态')
+  if (!card.includes('宇宙')) fail.push('通关结算未显示「宇宙」终极')
+}
+
+/**
  * 全宽可投断言：「下一个」胶囊 DOM 不存在；待投球可贴到最左/最右墙内边界，
  * 不被左上分数 HUD 缩减（视觉重叠由 HUD 样式/衬底解决）。
  */
@@ -232,6 +264,18 @@ async function runPC(page) {
   log('重开后 score =', after, 'phase =', ph2)
   if (after !== 0) fail.push('重开后分数未归零')
   if (ph2 !== 'play') fail.push('重开后未回到 play')
+
+  // 恒星演化段（10红巨星/11白矮星/12中子星/13黑洞）摆段截图，不误触死亡线
+  await page.evaluate(() => window.__mergePlanet.reset())
+  await stageSegment(page, [[10, 0.16], [11, 0.38], [12, 0.6], [13, 0.84]], 'mp-pc-stellar.png')
+  // 宇宙结构段（14球状星团/15星系/16星系团/17超星系团/18宇宙）
+  await page.evaluate(() => window.__mergePlanet.reset())
+  await stageSegment(page, [[14, 0.12], [15, 0.32], [16, 0.52], [17, 0.72], [18, 0.9]], 'mp-pc-cosmos.png')
+  // 满级(18宇宙)终极通关结算
+  await page.evaluate(() => window.__mergePlanet.reset())
+  await winToCosmos(page)
+  await shot(page, 'mp-pc-win.png')
+
   await overflow(page, 'pc-play')
 }
 
@@ -290,6 +334,9 @@ async function runMobile(page) {
   await shot(page, 'mp-mobile-left.png')
   await aimAt(page, 9999)
   await shot(page, 'mp-mobile-right.png')
+  // 手机含高级天体：15星系 + 18宇宙（大球在窄屏不顶满/不穿墙）
+  await page.evaluate(() => window.__mergePlanet.reset())
+  await stageSegment(page, [[15, 0.3], [18, 0.72]], 'mp-mobile-cosmos.png')
   await overflow(page, 'mobile-play')
 }
 

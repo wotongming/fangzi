@@ -92,7 +92,7 @@ const ORBIT: GameDef[] = [
     id: 'merge-planet',
     name: '合成大星球',
     icon: '🪐',
-    desc: '顶部滑轨瞄准投放，同级星球相撞合成进化，一路升到终极黑洞',
+    desc: '顶部滑轨瞄准投放，同级星球相撞合成进化，从陨石一路合成到终极宇宙',
     pro: false,
     difficulties: ['classic'],
     kind: 'gpu',

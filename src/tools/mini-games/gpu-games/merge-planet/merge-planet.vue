@@ -2,8 +2,8 @@
 /**
  * 合成大星球（Merge Planet）—— matter.js 真实物理 + Canvas2D 程序化美术。
  *
- * 玩法：顶部滑轨瞄准投放星球，两颗同级接触合成更高一级；连锁连击加分；
- * 合成黑洞（终极）通关大爆发；球体越过警戒线并持续约 1.75s 判负（瞬时擦过不算）。
+ * 玩法：顶部滑轨瞄准投放星球，两颗同级接触合成更高一级（共 19 级，陨石→…→宇宙）；
+ * 连锁连击加分；合成宇宙（终极）通关大爆发；球体越过警戒线并持续约 1.75s 判负（瞬时擦过不算）。
  * 纯玩法判定在 ./game/logic；本组件负责物理世界、渲染、输入、音效与结算。
  * 全部本地打包（matter.js 进本地 chunk 并被 PWA 预缓存），断网可玩，零素材/零版权。
  */
@@ -22,6 +22,7 @@ import {
   updateOverline,
   clampAim,
   wallAimRange,
+  ballRadius,
   gammaToGravityX,
   lerpGravityX,
   planMerges,
@@ -126,16 +127,10 @@ function cssOf(tier: number): { bg: string; color: string } {
   }
 }
 
-function clampNum(v: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, v))
-}
-
+/** 某级物理像素半径：交给布局纯函数按容器短边换算（最大球直径 ≤ 短边 0.34）。 */
 function radiusFor(tier: number): number {
-  const t = TIERS[tier]!
-  const minR = clampNum(W * 0.04, 11, 18)
-  const maxR = clampNum(W * 0.1, 26, 48)
-  const f = (t.radius - 0.42) / (1.3 - 0.42)
-  return minR + (maxR - minR) * f
+  const shortEdge = Math.min(W, H)
+  return ballRadius(tier, shortEdge)
 }
 
 function syncQueueLabels(): void {
@@ -603,12 +598,14 @@ let debugAbove = false
 function exposeDebug(): void {
   if (typeof window === 'undefined') return
   ;(window as unknown as Record<string, unknown>).__mergePlanet = {
-    spawn: (tier: number, x?: number) => {
-      const p = spawnPlanet(tier, x ?? aimX, railH + 46)
+    spawn: (tier: number, x?: number, y?: number) => {
+      const p = spawnPlanet(tier, x ?? aimX, y ?? railH + 46)
       return p.body.id
     },
     score: () => score.value,
     phase: () => phase.value,
+    // 测试接缝：直接触发满级(宇宙)通关结算（物理逐级可达性由纯逻辑链单测覆盖）
+    showWin: () => onWin(W / 2, H * 0.5),
     reset,
     aim: (x: number) => {
       const { min, max } = settleRange()
@@ -767,9 +764,9 @@ onBeforeUnmount(() => {
     <!-- 结算 -->
     <div v-if="phase !== 'play'" class="mp-result">
       <div class="mp-card">
-        <div class="mp-title">{{ phase === 'win' ? '黑洞诞生 · 通关！' : '堆叠过高 · 本局结束' }}</div>
+        <div class="mp-title">{{ phase === 'win' ? '宇宙诞生 · 通关！' : '堆叠过高 · 本局结束' }}</div>
         <p class="mp-sub">
-          {{ phase === 'win' ? '你把一颗星球一路合成到了终极黑洞' : '星球越过警戒线太久，再放低一点、堆稳一点' }}
+          {{ phase === 'win' ? '你把一颗陨石一路合成到了终极宇宙' : '星球越过警戒线太久，再放低一点、堆稳一点' }}
         </p>
         <div class="mp-score">{{ score }}</div>
         <button type="button" class="mp-btn" @click="reset">↻ 再来一局</button>

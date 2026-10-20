@@ -19,6 +19,9 @@ import {
   updateOverline,
   clampAim,
   wallAimRange,
+  ballRadius,
+  maxDiameterRatio,
+  SPAWN_WEIGHTS,
   gammaToGravityX,
   lerpGravityX,
   GRAVITY_DEADZONE_DEG,
@@ -30,38 +33,78 @@ import {
   type MergeNode
 } from '../src/tools/mini-games/gpu-games/merge-planet/game/logic.ts'
 
-test('进化链：11 级，半径与基础分严格递增，终极为黑洞', () => {
-  assert.equal(TIER_COUNT, 11)
-  assert.equal(FINAL_TIER, 10)
+test('进化链：19 级，id/顺序正确，半径与基础分严格递增，终极为宇宙', () => {
+  assert.equal(TIER_COUNT, 19)
+  assert.equal(FINAL_TIER, 18)
+  const ids = TIERS.map((t) => t.id)
+  assert.deepEqual(ids, [
+    'meteorite', 'moon', 'mercury', 'mars', 'earth', 'neptune', 'uranus', 'saturn',
+    'jupiter', 'sun', 'redgiant', 'whitedwarf', 'neutronstar', 'blackhole',
+    'globular', 'galaxy', 'galaxycluster', 'supercluster', 'cosmos'
+  ])
   for (let i = 1; i < TIER_COUNT; i++) {
     assert.ok(TIERS[i]!.radius > TIERS[i - 1]!.radius, `level ${i} 半径应更大`)
     assert.ok(TIERS[i]!.baseScore > TIERS[i - 1]!.baseScore, `level ${i} 基础分应更高`)
   }
   assert.equal(TIERS[0]!.id, 'meteorite')
-  assert.equal(TIERS[FINAL_TIER]!.id, 'blackhole')
-  assert.equal(TIERS[FINAL_TIER]!.name, '黑洞')
+  assert.equal(TIERS[FINAL_TIER]!.id, 'cosmos')
+  assert.equal(TIERS[FINAL_TIER]!.name, '宇宙')
+  // 黑洞由旧顶级下移为 14
+  assert.equal(TIERS[13]!.id, 'blackhole')
+  assert.equal(TIERS[13]!.name, '黑洞')
 })
 
-test('同级判定：相等且合法才为真，越界为假', () => {
-  assert.equal(sameTier(3, 3), true)
-  assert.equal(sameTier(0, 0), true)
-  assert.equal(sameTier(3, 4), false)
-  assert.equal(sameTier(-1, -1), false)
-  assert.equal(sameTier(11, 11), false)
-})
-
-test('升级链：逐级 +1 到黑洞，黑洞与越界不可再升', () => {
+test('升级链：从 0 逐级 +1 可合到 18 宇宙，18 触发终局且无 next', () => {
   let cur = 0
   const seq: number[] = []
   while (cur !== null) {
     seq.push(cur)
     cur = nextTierIndex(cur)
   }
-  assert.deepEqual(seq, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  assert.equal(seq.length, 19)
+  assert.equal(seq[0], 0)
+  assert.equal(seq[18], FINAL_TIER)
   assert.equal(nextTierIndex(FINAL_TIER), null)
-  assert.equal(nextTierIndex(-2), null)
   assert.equal(isFinal(FINAL_TIER), true)
-  assert.equal(isFinal(9), false)
+  assert.equal(isFinal(17), false)
+})
+
+test('投放池：只含允许低级(0..4)，权重归一且低级更常见', () => {
+  assert.equal(MAX_SPAWN_TIER, 4)
+  assert.equal(SPAWN_WEIGHTS.length, MAX_SPAWN_TIER + 1)
+  const total = SPAWN_WEIGHTS.reduce((s, w) => s + w, 0)
+  assert.equal(total, 12)
+  // 权重单调不增（低级更常见）
+  for (let i = 1; i < SPAWN_WEIGHTS.length; i++) {
+    assert.ok(SPAWN_WEIGHTS[i]! <= SPAWN_WEIGHTS[i - 1]!)
+  }
+  // 任意 rng 结果都落在 0..4，绝不投出高级
+  for (let k = 0; k < 200; k++) {
+    const t = rollSpawnTier(() => k / 200)
+    assert.ok(t >= 0 && t <= MAX_SPAWN_TIER)
+  }
+})
+
+test('布局半径：三视口短边内最大球直径 ≤ 0.34，半径单调且不越界', () => {
+  for (const shortEdge of [812, 1112, 860, 375]) {
+    assert.ok(maxDiameterRatio(shortEdge) <= 0.34, `短边 ${shortEdge} 最大直径占比超限`)
+    let prev = -1
+    for (let t = 0; t < TIER_COUNT; t++) {
+      const r = ballRadius(t, shortEdge)
+      assert.ok(r > 0 && Number.isFinite(r))
+      assert.ok(r > prev, `tier ${t} 半径应递增`)
+      prev = r
+    }
+  }
+})
+
+test('同级判定：相等且合法才为真，越界为假', () => {
+  assert.equal(sameTier(3, 3), true)
+  assert.equal(sameTier(0, 0), true)
+  assert.equal(sameTier(13, 13), true) // 黑洞(13)合法同级
+  assert.equal(sameTier(3, 4), false)
+  assert.equal(sameTier(-1, -1), false)
+  assert.equal(sameTier(19, 19), false) // 越界（终级为 18）
 })
 
 test('计分：连击 1 取基础分，连击递增 ×1.3，非法层级/连击归零或按 1', () => {
@@ -73,13 +116,14 @@ test('计分：连击 1 取基础分，连击递增 ×1.3，非法层级/连击�
   assert.equal(mergeScore(99, 1), 0)
   assert.equal(mergeScore(5, 0), TIERS[5]!.baseScore) // 非法 combo 按 1
   assert.equal(mergeScore(5, NaN), TIERS[5]!.baseScore)
+  // 高级跃迁分差更大（指数曲线）
+  assert.ok(TIERS[18]!.baseScore > TIERS[9]!.baseScore * 20)
 })
 
-test('投放随机：只在前 4 级，注入 rng 可复现且低级更常见', () => {
+test('投放随机：注入 rng 可复现，且结果只落在 0..4', () => {
   const out = new Set<number>()
   let calls = 0
   const rng = () => {
-    // 确定性轮转，覆盖权重区间
     const seq = [0.1, 0.5, 0.7, 0.95, 0.3, 0.62]
     return seq[calls++ % seq.length]!
   }
@@ -88,9 +132,8 @@ test('投放随机：只在前 4 级，注入 rng 可复现且低级更常见', 
     out.add(t)
     assert.ok(t >= 0 && t <= MAX_SPAWN_TIER)
   }
-  // 0.1→陨石(0)、0.5 落在月球/水星区间、0.95→火星(3)，集合至少覆盖 0/2/3
   assert.ok(out.has(0))
-  assert.ok(out.has(3))
+  assert.ok(out.has(4)) // 地球(4)也在投放池内
   // 同一 rng 序列两次结果一致
   const a = rollSpawnTier(() => 0.05)
   const b = rollSpawnTier(() => 0.05)
@@ -244,6 +287,18 @@ test('合并：一帧双同级只合法合并一对（去重，一球只合一�
   assert.deepEqual([pairs[0]!.a, pairs[0]!.b].sort(), [1, 2])
 })
 
+test('19 级表：高级同级斜向首碰即合（黑洞13 对 → 球状星团14），不同级不合', () => {
+  const a = node(1, 13, 100, 100, 40)
+  const b = node(2, 13, 150, 128, 40) // 斜向切向接触
+  assert.equal(contactsForMerge(a, b, NOW), true)
+  const pairs = planMerges([a, b], NOW)
+  assert.equal(pairs.length, 1)
+  assert.equal(pairs[0]!.produced, 14)
+  // 黑洞13 与 宇宙18 不同级永不合
+  const c = node(3, 18, 300, 100, 50)
+  assert.equal(planMerges([a, c], NOW).length, 0)
+})
+
 test('最高分：刷新/保留/平局非新纪录，非法输入兜底 0', () => {
   assert.deepEqual(recordBest(120, 300), { best: 300, isNewBest: true })
   assert.deepEqual(recordBest(300, 120), { best: 300, isNewBest: false })
@@ -252,8 +307,14 @@ test('最高分：刷新/保留/平局非新纪录，非法输入兜底 0', () =
   assert.deepEqual(recordBest(100, NaN), { best: 100, isNewBest: false })
 })
 
-test('常量口径：连击窗口/冷却/死亡线为正且冷却小于窗口', () => {
+test('常量口径：连击窗口/冷却/死亡线为正且冷却小于窗口；投放池到地球(4)', () => {
   assert.ok(COMBO_WINDOW_MS > DROP_COOLDOWN_MS)
   assert.ok(DEATH_LINE_MS >= 1000)
-  assert.equal(MAX_SPAWN_TIER, 3)
+  assert.equal(MAX_SPAWN_TIER, 4)
+})
+
+test('旧最高分兼容：key 不变，读到旧数值即保留、不清档', () => {
+  // 旧版本打出的高分作为 prev 直接保留，不因扩链重置
+  assert.deepEqual(recordBest(9876, 120), { best: 9876, isNewBest: false })
+  assert.deepEqual(recordBest(100, 50000), { best: 50000, isNewBest: true })
 })

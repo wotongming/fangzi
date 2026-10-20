@@ -332,13 +332,327 @@ export function paintPlanet(
       })
       break
     }
-    default: // 10 黑洞：纯黑核心 + 光子环 + 吸积盘
+    case 10: // 红巨星：巨大橙红→暗红膨胀气晕 + 对流亮斑
+      drawRedGiant(ctx, x, y, r, tier, timeSec, seed)
+      break
+    case 11: // 白矮星：小而极亮的白热/淡蓝致密星 + 紧凑辉光（游戏半径画大）
+      drawWhiteDwarf(ctx, x, y, r, timeSec)
+      break
+    case 12: // 中子星(脉冲星)：蓝白致密球 + 两极锥形能量束 + 微弱脉冲
+      drawNeutronStar(ctx, x, y, r, timeSec)
+      break
+    case 13: // 黑洞：纯黑引力透镜暗核 + 高速吸积盘 + 光子环
       drawBlackhole(ctx, x, y, r, timeSec)
+      break
+    case 14: // 球状星团：数十颗亮恒星聚成球形，中心密、边缘疏
+      drawGlobular(ctx, x, y, r, seed)
+      break
+    case 15: // 旋涡星系：明亮核球 + 2~3 旋臂 + 尘带 + 倾斜盘面
+      drawSpiralGalaxy(ctx, x, y, r, seed, timeSec)
+      break
+    case 16: // 星系团：多个星系光斑聚集在淡蓝暗物质光晕中
+      drawGalaxyCluster(ctx, x, y, r, seed)
+      break
+    case 17: // 超星系团：纤维状/网状光点结构（大尺度纤维 + 空洞）
+      drawSupercluster(ctx, x, y, r, seed)
+      break
+    case 18: // 宇宙(终极)：深邃多色星云 + 微缩星系网格全景 + 柔和外辉
+      drawCosmos(ctx, x, y, r, seed, timeSec)
       break
   }
 
-  if (tierIndex !== 10) finishSphere(ctx, x, y, r)
+  // 黑洞(13)与宇宙结构类(14~18)为专属美术，不走统一高光阴影；0~12 仍叠体积感
+  if (tierIndex <= 12) finishSphere(ctx, x, y, r)
   ctx.restore()
+}
+
+/** 红巨星：外层膨胀热气晕 + 橙红对流亮斑。 */
+function drawRedGiant(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, tier: TierDef, timeSec: number, seed: number): void {
+  const pulse = 1 + Math.sin(timeSec * 2.2) * 0.03
+  // 外层热气晕
+  const glow = ctx.createRadialGradient(x, y, r * 0.6, x, y, r * 1.75 * pulse)
+  glow.addColorStop(0, 'rgba(255,120,60,0.55)')
+  glow.addColorStop(0.55, 'rgba(230,80,40,0.25)')
+  glow.addColorStop(1, 'rgba(200,60,30,0)')
+  ctx.fillStyle = glow
+  ctx.beginPath()
+  ctx.arc(x, y, r * 1.75 * pulse, 0, Math.PI * 2)
+  ctx.fill()
+  baseSphere(ctx, x, y, r, tier)
+  clipCircle(ctx, x, y, r, () => {
+    // 对流亮斑（不规则橙黄斑块）
+    for (let i = 0; i < 12; i++) {
+      const a = hash01(seed * 7 + i) * Math.PI * 2
+      const d = hash01(seed * 8 + i) * r * 0.8
+      ctx.fillStyle = `rgba(255,${150 + Math.floor(hash01(seed + i) * 70)},90,${0.18 + hash01(i + seed) * 0.22})`
+      ctx.beginPath()
+      ctx.ellipse(
+        x + Math.cos(a) * d, y + Math.sin(a) * d,
+        r * (0.16 + hash01(seed * 3 + i) * 0.18),
+        r * (0.1 + hash01(i) * 0.12), a, 0, Math.PI * 2
+      )
+      ctx.fill()
+    }
+    // 暗红沉降区
+    ctx.fillStyle = 'rgba(150,40,26,0.35)'
+    ctx.beginPath()
+    ctx.ellipse(x - r * 0.3, y + r * 0.35, r * 0.5, r * 0.3, 0.5, 0, Math.PI * 2)
+    ctx.fill()
+  })
+}
+
+/** 白矮星：极亮白热核心 + 淡蓝紧凑辉光。 */
+function drawWhiteDwarf(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, timeSec: number): void {
+  const pulse = 1 + Math.sin(timeSec * 4) * 0.05
+  const halo = ctx.createRadialGradient(x, y, 0, x, y, r * 1.5 * pulse)
+  halo.addColorStop(0, 'rgba(240,248,255,0.95)')
+  halo.addColorStop(0.35, 'rgba(190,220,255,0.5)')
+  halo.addColorStop(1, 'rgba(150,190,255,0)')
+  ctx.fillStyle = halo
+  ctx.beginPath()
+  ctx.arc(x, y, r * 1.5 * pulse, 0, Math.PI * 2)
+  ctx.fill()
+  const core = ctx.createRadialGradient(x - r * 0.2, y - r * 0.25, 0, x, y, r)
+  core.addColorStop(0, '#ffffff')
+  core.addColorStop(0.55, '#e8f1ff')
+  core.addColorStop(1, '#9fc0ee')
+  ctx.fillStyle = core
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+  ctx.fill()
+  // 致密高光点
+  ctx.fillStyle = 'rgba(255,255,255,0.95)'
+  ctx.beginPath()
+  ctx.arc(x - r * 0.32, y - r * 0.36, r * 0.2, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+/** 中子星(脉冲星)：蓝白致密球 + 两极锥形光束 + 旋转脉冲明暗。 */
+function drawNeutronStar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, timeSec: number): void {
+  const beam = 0.55 + 0.45 * Math.sin(timeSec * 6)
+  // 两极锥形能量束（绕竖直轴）
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.globalAlpha = 0.35 + beam * 0.4
+  for (const dir of [-1, 1]) {
+    const cone = ctx.createLinearGradient(0, 0, 0, dir * r * 2.4)
+    cone.addColorStop(0, 'rgba(190,235,255,0.9)')
+    cone.addColorStop(1, 'rgba(120,180,255,0)')
+    ctx.fillStyle = cone
+    ctx.beginPath()
+    ctx.moveTo(0, 0)
+    ctx.ellipse(0, dir * r * 1.2, r * 0.28, r * 1.2, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+  // 致密蓝白球
+  const core = ctx.createRadialGradient(x - r * 0.25, y - r * 0.3, 0, x, y, r)
+  core.addColorStop(0, '#eaf6ff')
+  core.addColorStop(0.6, '#9fd4ff')
+  core.addColorStop(1, '#3f7fd6')
+  ctx.fillStyle = core
+  ctx.beginPath()
+  ctx.arc(x, y, r * 0.92, 0, Math.PI * 2)
+  ctx.fill()
+  // 磁层环
+  ctx.strokeStyle = `rgba(180,225,255,${0.3 + beam * 0.4})`
+  ctx.lineWidth = r * 0.05
+  ctx.beginPath()
+  ctx.ellipse(x, y, r * 1.15, r * 0.4, -0.4, 0, Math.PI * 2)
+  ctx.stroke()
+}
+
+/** 球状星团：数十颗亮恒星，中心密、边缘疏，整体团成球。 */
+function drawGlobular(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, seed: number): void {
+  // 微弱金色团晕
+  const glow = ctx.createRadialGradient(x, y, 0, x, y, r)
+  glow.addColorStop(0, 'rgba(255,226,170,0.35)')
+  glow.addColorStop(1, 'rgba(255,200,140,0)')
+  ctx.fillStyle = glow
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+  ctx.fill()
+  clipCircle(ctx, x, y, r, () => {
+    for (let i = 0; i < 46; i++) {
+      const u = hash01(seed * 11 + i)
+      const v = hash01(seed * 13 + i * 3)
+      // 向心聚集：用 sqrt(u) 控制半径，越中心越密
+      const d = Math.sqrt(u) * r * 0.95
+      const a = v * Math.PI * 2
+      const sx = x + Math.cos(a) * d
+      const sy = y + Math.sin(a) * d
+      const sr = r * (0.03 + hash01(seed * 17 + i) * 0.07)
+      const warm = hash01(seed * 19 + i)
+      ctx.fillStyle = warm > 0.7 ? '#fff4d6' : warm > 0.4 ? '#ffe6b8' : '#ffd28a'
+      ctx.globalAlpha = 0.5 + hash01(i + seed) * 0.5
+      ctx.beginPath()
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.globalAlpha = 1
+  })
+}
+
+/** 旋涡星系：亮核球 + 2~3 旋臂 + 尘带 + 倾斜盘面。 */
+function drawSpiralGalaxy(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, seed: number, timeSec: number): void {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(-0.5 + hash01(seed) * 0.4)
+  ctx.scale(1, 0.62)
+  // 盘面淡蓝辉光
+  const disk = ctx.createRadialGradient(0, 0, 0, 0, 0, r)
+  disk.addColorStop(0, 'rgba(220,236,255,0.5)')
+  disk.addColorStop(0.6, 'rgba(120,170,235,0.22)')
+  disk.addColorStop(1, 'rgba(90,130,220,0)')
+  ctx.fillStyle = disk
+  ctx.beginPath()
+  ctx.arc(0, 0, r, 0, Math.PI * 2)
+  ctx.fill()
+  // 旋臂（对数螺线点列）
+  const arms = 2 + Math.floor(hash01(seed * 3) * 2)
+  for (let arm = 0; arm < arms; arm++) {
+    for (let i = 0; i < 34; i++) {
+      const t = i / 34
+      const ang = arm * ((Math.PI * 2) / arms) + t * 4.2 + timeSec * 0.05
+      const dd = t * r * 0.92
+      const sx = Math.cos(ang) * dd
+      const sy = Math.sin(ang) * dd
+      const sr = r * (0.05 * (1 - t) + 0.015)
+      ctx.fillStyle = `rgba(${170 + Math.floor(t * 60)},${200 + Math.floor(t * 30)},255,${0.55 * (1 - t) + 0.15})`
+      ctx.beginPath()
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+  // 尘带（暗褐螺旋弧）
+  ctx.strokeStyle = 'rgba(70,52,90,0.5)'
+  ctx.lineWidth = r * 0.06
+  ctx.beginPath()
+  for (let i = 0; i <= 40; i++) {
+    const t = i / 40
+    const ang = t * 4.2
+    const dd = t * r * 0.9
+    const px = Math.cos(ang) * dd
+    const py = Math.sin(ang) * dd
+    if (i === 0) ctx.moveTo(px, py)
+    else ctx.lineTo(px, py)
+  }
+  ctx.stroke()
+  // 明亮核球
+  const bulge = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.34)
+  bulge.addColorStop(0, '#fff8ea')
+  bulge.addColorStop(1, 'rgba(255,220,180,0)')
+  ctx.fillStyle = bulge
+  ctx.beginPath()
+  ctx.arc(0, 0, r * 0.34, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** 星系团：多个星系光斑聚集在淡蓝暗物质光晕中。 */
+function drawGalaxyCluster(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, seed: number): void {
+  const halo = ctx.createRadialGradient(x, y, 0, x, y, r)
+  halo.addColorStop(0, 'rgba(150,190,255,0.22)')
+  halo.addColorStop(1, 'rgba(120,160,240,0)')
+  ctx.fillStyle = halo
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+  ctx.fill()
+  clipCircle(ctx, x, y, r, () => {
+    for (let i = 0; i < 9; i++) {
+      const a = hash01(seed * 5 + i) * Math.PI * 2
+      const d = hash01(seed * 7 + i) * r * 0.8
+      const gx = x + Math.cos(a) * d
+      const gy = y + Math.sin(a) * d
+      const gr = r * (0.12 + hash01(seed * 9 + i) * 0.12)
+      // 小星系：核 + 短旋尾
+      const gg = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr * 1.6)
+      gg.addColorStop(0, 'rgba(235,244,255,0.9)')
+      gg.addColorStop(1, 'rgba(150,195,255,0)')
+      ctx.fillStyle = gg
+      ctx.beginPath()
+      ctx.ellipse(gx, gy, gr * 1.6, gr * 0.7, a, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#ffffff'
+      ctx.beginPath()
+      ctx.arc(gx, gy, gr * 0.35, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  })
+}
+
+/** 超星系团：纤维/网状光点结构（大尺度纤维 + 空洞）。 */
+function drawSupercluster(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, seed: number): void {
+  clipCircle(ctx, x, y, r, () => {
+    // 3 条主纤维（折线光点链）
+    for (let f = 0; f < 3; f++) {
+      let px = x + (hash01(seed + f * 3) - 0.5) * r * 1.6
+      let py = y + (hash01(seed + f * 5) - 0.5) * r * 1.6
+      for (let i = 0; i < 16; i++) {
+        px += (hash01(seed * 31 + f * 16 + i) - 0.5) * r * 0.22
+        py += (hash01(seed * 37 + f * 16 + i) - 0.5) * r * 0.22
+        const sr = r * (0.03 + hash01(seed * 41 + i + f) * 0.05)
+        ctx.fillStyle = f === 1 ? 'rgba(210,190,255,0.85)' : 'rgba(190,205,255,0.8)'
+        ctx.beginPath()
+        ctx.arc(px, py, sr, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+    // 散布的稀疏暗点（空洞区）
+    for (let i = 0; i < 12; i++) {
+      const a = hash01(seed * 51 + i) * Math.PI * 2
+      const d = hash01(seed * 53 + i) * r * 0.95
+      ctx.fillStyle = 'rgba(150,165,220,0.25)'
+      ctx.beginPath()
+      ctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, r * 0.02, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  })
+}
+
+/** 宇宙(终极)：深邃多色星云 + 微缩星系网格全景 + 柔和外辉。 */
+function drawCosmos(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, seed: number, timeSec: number): void {
+  // 外层柔辉
+  const halo = ctx.createRadialGradient(x, y, r * 0.5, x, y, r * 1.5)
+  halo.addColorStop(0, 'rgba(150,120,255,0.28)')
+  halo.addColorStop(0.6, 'rgba(90,150,255,0.14)')
+  halo.addColorStop(1, 'rgba(120,90,255,0)')
+  ctx.fillStyle = halo
+  ctx.beginPath()
+  ctx.arc(x, y, r * 1.5, 0, Math.PI * 2)
+  ctx.fill()
+  clipCircle(ctx, x, y, r, () => {
+    // 多色星云团
+    const nebs: Array<[number, number, number, string]> = [
+      [-0.4, -0.3, 0.55, 'rgba(120,90,220,0.4)'],
+      [0.4, 0.2, 0.5, 'rgba(70,140,220,0.35)'],
+      [0.1, 0.5, 0.45, 'rgba(200,90,190,0.3)'],
+      [-0.2, 0.45, 0.4, 'rgba(90,180,190,0.3)']
+    ]
+    for (const [nx, ny, nr, col] of nebs) {
+      const ng = ctx.createRadialGradient(x + nx * r, y + ny * r, 0, x + nx * r, y + ny * r, nr * r)
+      ng.addColorStop(0, col)
+      ng.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.fillStyle = ng
+      ctx.beginPath()
+      ctx.arc(x, y, r, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    // 微缩星系网格（均匀点阵 + 少量旋涡小点，缓慢呼吸）
+    const breathe = 0.7 + 0.3 * Math.sin(timeSec * 2)
+    for (let gy = -3; gy <= 3; gy++) {
+      for (let gx = -3; gx <= 3; gx++) {
+        const jx = (hash01(seed * 71 + gy * 7 + gx) - 0.5) * r * 0.1
+        const jy = (hash01(seed * 73 + gy * 7 + gx) - 0.5) * r * 0.1
+        const sx = x + (gx / 3) * r * 0.82 + jx
+        const sy = y + (gy / 3) * r * 0.82 + jy
+        ctx.fillStyle = `rgba(235,242,255,${0.5 * breathe + 0.2})`
+        ctx.beginPath()
+        ctx.arc(sx, sy, r * 0.025, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+  })
 }
 
 function bands(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, colors: string[]): void {
