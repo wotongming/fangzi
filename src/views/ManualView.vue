@@ -15,7 +15,7 @@ function onClick(e: MouseEvent) {
 <template>
   <div class="container help-page">
     <div class="top">
-      <RouterLink class="back" to="/">← 返回开方子</RouterLink>
+      <RouterLink class="back" to="/">← 返回我的方子</RouterLink>
       <h1>新手使用指南</h1>
       <p class="faint">第一次用方子？花 2 分钟读一遍，安装、搜索、计费与隐私一次讲清。</p>
     </div>

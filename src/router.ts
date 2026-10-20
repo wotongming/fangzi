@@ -6,6 +6,7 @@ const base = import.meta.env.BASE_URL
 
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: () => import('./views/HomeView.vue') },
+  { path: '/search', name: 'search', component: () => import('./views/SearchView.vue') },
   { path: '/browse', name: 'browse', component: () => import('./views/BrowseView.vue') },
   { path: '/help', name: 'help', component: () => import('./views/ManualView.vue') },
   {

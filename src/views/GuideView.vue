@@ -21,7 +21,7 @@ const html = computed(() => (tool.value?.guide ? renderMarkdown(tool.value.guide
   </div>
   <div v-else class="container notfound">
     <p>没有找到这个工具。</p>
-    <RouterLink class="btn btn-primary" to="/">回首页</RouterLink>
+    <RouterLink class="btn btn-primary" to="/">回我的方子</RouterLink>
   </div>
 </template>
 

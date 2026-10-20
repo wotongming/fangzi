@@ -27,9 +27,9 @@ watch(
           <span class="brand-name">方子</span>
         </RouterLink>
         <nav class="topnav">
-          <RouterLink to="/">开方子</RouterLink>
-          <RouterLink to="/browse">全部工具</RouterLink>
-          <RouterLink to="/help">使用帮助</RouterLink>
+          <RouterLink to="/">我的方子</RouterLink>
+          <RouterLink to="/browse">方子铺</RouterLink>
+          <RouterLink to="/help">开方指南</RouterLink>
           <RouterLink to="/settings">设置</RouterLink>
         </nav>
       </div>
@@ -50,19 +50,32 @@ watch(
     <!-- 移动端底部主导航（≤820px 显示；沉浸态隐藏） -->
     <nav class="tabbar" aria-label="主导航">
       <RouterLink to="/" class="tab" :class="{ on: route.name === 'home' }">
-        <span class="tab-ico" aria-hidden="true">🏠</span>
-        <span class="tab-txt">开方子</span>
+        <svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 4h12v17l-6-4-6 4z" />
+        </svg>
+        <span class="tab-txt">我的方子</span>
       </RouterLink>
       <RouterLink to="/browse" class="tab" :class="{ on: route.name === 'browse' }">
-        <span class="tab-ico" aria-hidden="true">🧰</span>
-        <span class="tab-txt">全部工具</span>
+        <svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 10l8-6 8 6" />
+          <path d="M5 10v9h14v-9" />
+          <path d="M9 19v-5h6v5" />
+        </svg>
+        <span class="tab-txt">方子铺</span>
       </RouterLink>
       <RouterLink to="/help" class="tab" :class="{ on: route.name === 'help' }">
-        <span class="tab-ico" aria-hidden="true">📖</span>
-        <span class="tab-txt">使用帮助</span>
+        <svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 5a2 2 0 012-2h12v16H6a2 2 0 00-2 2V5z" />
+          <path d="M4 19a2 2 0 012-2h12" />
+          <path d="M9 7.5h5M9 11h5" />
+        </svg>
+        <span class="tab-txt">开方指南</span>
       </RouterLink>
       <RouterLink to="/settings" class="tab" :class="{ on: route.name === 'settings' }">
-        <span class="tab-ico" aria-hidden="true">⚙️</span>
+        <svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.2" />
+          <path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8" />
+        </svg>
         <span class="tab-txt">设置</span>
       </RouterLink>
     </nav>
@@ -191,7 +204,9 @@ watch(
     text-decoration: none !important;
   }
   .tab-ico {
-    font-size: 20px;
+    width: 22px;
+    height: 22px;
+    display: block;
     line-height: 1;
   }
   .tab-txt {

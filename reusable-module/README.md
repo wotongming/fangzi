@@ -15,6 +15,7 @@
 | bill-csv | 账单/交易类 CSV 通用解析：UTF-8(BOM)→GBK→替换符多级文本解码、RFC4180 表格解析（引号/内嵌逗号换行/转义）、金额元转整数分、多格式日期解析、表头列名精确+模糊定位（零依赖 TS，浏览器原生 TextDecoder） | `bill-csv/bill-csv.ts` | 2026-10-17 由账单订阅盘点（pipeline 009）沉淀 |
 | recurring-detect | 周期性交易/订阅识别纯函数：商户名归一 + 金额容差归桶 + 扣费间隔中位数落入月/季/半年/年区间 + 变异系数阈值，输出标准 cadence、次数、年化金额与下次扣费预测 | `recurring-detect/recurring-detect.ts` | 2026-10-17 由账单订阅盘点（pipeline 009）沉淀 |
 | ort-wasm-loader | onnxruntime-web 胶水脚本 MIME 兼容加载：静态托管（EdgeOne）把 `.mjs` 下发成 octet-stream 致动态 import 失败时，fetch 文本→`text/javascript` blob URL→对象形式 wasmPaths，跨域隔离/失败自动回退直链；适配 onnxruntime-web 与 Transformers.js | `ort-wasm-loader/ort-wasm-loader.ts` | 2026-10-18 由本地知识库语义后端热修（pipeline 003）沉淀 |
+| use-pull-to-search | 首页顶部垂直下拉唤起搜索的纯函数判定：顶部+向下+纵向主导才开启、1/4 视口阈值、阻尼视觉位移、达标跳转/否则回弹、防水平误触（零依赖，可单测） | `use-pull-to-search/use-pull-to-search.ts` | 2026-10-20 导航改版沉淀 |
 
 ## 新增模块规范
 

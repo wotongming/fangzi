@@ -45,7 +45,7 @@ const snippetHtml = computed(() => {
       <button
         class="fav"
         :class="{ on: favorites.isFavorite(m.id) }"
-        :title="favorites.isFavorite(m.id) ? '从首页移除' : '添加到首页'"
+        :title="favorites.isFavorite(m.id) ? '从我的方子移除' : '收藏到我的方子'"
         @click.prevent.stop="favorites.toggle(m.id)"
       >
         {{ favorites.isFavorite(m.id) ? '★' : '☆' }}

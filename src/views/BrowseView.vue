@@ -39,7 +39,7 @@ const list = computed(() => {
 
 <template>
   <div class="container browse">
-    <h1>全部工具</h1>
+    <h1>方子铺</h1>
 
     <div class="filters card">
       <div class="frow">

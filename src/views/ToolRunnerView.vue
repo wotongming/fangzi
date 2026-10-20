@@ -103,7 +103,7 @@ onBeforeUnmount(() => {
           :class="{ on: favorites.isFavorite(m.id) }"
           @click="favorites.toggle(m.id)"
         >
-          {{ favorites.isFavorite(m.id) ? '★ 已添加到首页' : '☆ 添加到首页' }}
+          {{ favorites.isFavorite(m.id) ? '★ 已收藏到我的方子' : '☆ 收藏到我的方子' }}
         </button>
         <RouterLink class="btn" :to="`/t/${m.id}/guide`">
           {{ m.type === 'plugin' ? '使用手册' : '用户指导' }}
@@ -148,7 +148,7 @@ onBeforeUnmount(() => {
 
   <div v-else class="container notfound">
     <p>没有找到这个工具。</p>
-    <RouterLink class="btn btn-primary" to="/">回首页重新开方子</RouterLink>
+    <RouterLink class="btn btn-primary" to="/">回我的方子 · 重新开方子</RouterLink>
   </div>
 </template>
 
