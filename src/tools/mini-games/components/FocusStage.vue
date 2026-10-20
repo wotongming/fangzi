@@ -174,16 +174,16 @@ onBeforeUnmount(() => {
       <div v-if="menuOpen" class="sheet" @click.stop>
         <p class="sheet-title">{{ title }}</p>
         <button class="sheet-btn" @click="paused ? resume() : togglePause()">
-          {{ paused ? '▶ 继续' : '❚❚ 暂停' }}
+          {{ paused ? '继续' : '暂停' }}
         </button>
-        <button class="sheet-btn" @click="restart">↻ 重新开始</button>
-        <!-- 游戏自定义扩展按钮（如存档/读取存档），由父级按需填充 -->
+        <button class="sheet-btn" @click="restart">重新开始</button>
+        <!-- 游戏自定义扩展按钮（如存档/读取存档/重力开关），由父级按需填充，共用同一菜单项样式 -->
         <slot name="sheet-extra" />
         <button v-if="kind === 'gpu'" class="sheet-btn" @click="cycleParticle">
-          ✨ 特效：{{ PARTICLE_LABEL[particle] }}
+          特效：{{ PARTICLE_LABEL[particle] }}
         </button>
-        <button class="sheet-btn" @click="emit('toggle-mute')">{{ muted ? '🔇 已静音' : '🔊 音效开' }}</button>
-        <button class="sheet-btn danger" @click="exit_()">✕ 退出游戏</button>
+        <button class="sheet-btn" @click="emit('toggle-mute')">{{ muted ? '已静音' : '音效开' }}</button>
+        <button class="sheet-btn danger" @click="exit_()">退出游戏</button>
       </div>
     </transition>
   </div>
@@ -304,21 +304,7 @@ onBeforeUnmount(() => {
   font-weight: 700;
   color: #cfe0ff;
 }
-.sheet-btn {
-  padding: 11px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(150, 190, 255, 0.25);
-  background: rgba(255, 255, 255, 0.06);
-  color: #eaf2ff;
-  font-size: 15px;
-}
-.sheet-btn:active {
-  background: rgba(120, 170, 255, 0.22);
-}
-.sheet-btn.danger {
-  border-color: rgba(255, 120, 120, 0.35);
-  color: #ffb4b4;
-}
+/* 菜单项统一样式见文末非 scoped 块（含插槽内存档/读档/重力开关行） */
 
 .sheet-enter-active,
 .sheet-leave-active {
@@ -334,5 +320,87 @@ onBeforeUnmount(() => {
 }
 .pop-enter-from {
   transform: scale(0.6);
+}
+</style>
+
+<!-- 菜单统一样式（非 scoped，供 sheet-extra 插槽内的存档/读档/重力开关继承同一套） -->
+<style>
+.focus-stage .sheet-btn {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(150, 190, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: #eaf2ff;
+  font-size: 15px;
+  line-height: 1.4;
+  text-align: center;
+  cursor: pointer;
+}
+.focus-stage .sheet-btn:active {
+  background: rgba(120, 170, 255, 0.22);
+}
+.focus-stage .sheet-btn.danger {
+  border-color: rgba(255, 120, 120, 0.35);
+  color: #ffb4b4;
+}
+.focus-stage .sheet-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.03);
+}
+/* 开关设置行：与按钮同行高/左右对齐，Switch 靠右 */
+.focus-stage .sheet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(150, 190, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+}
+.focus-stage .sheet-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.focus-stage .sheet-row-label {
+  font-size: 15px;
+  color: #eaf2ff;
+}
+.focus-stage .sheet-row-sub {
+  font-size: 12px;
+  color: #9fb4d8;
+}
+.focus-stage .sheet-switch {
+  flex: none;
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(150, 190, 255, 0.35);
+  background: rgba(255, 255, 255, 0.1);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.focus-stage .sheet-switch.on {
+  background: rgba(96, 190, 140, 0.55);
+  border-color: rgba(120, 220, 165, 0.6);
+}
+.focus-stage .sheet-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  transition: transform 0.15s ease;
+}
+.focus-stage .sheet-switch.on .sheet-knob {
+  transform: translateX(20px);
 }
 </style>

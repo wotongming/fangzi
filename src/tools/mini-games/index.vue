@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef, type Component } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Component } from 'vue'
 import { manifest } from './manifest'
 import { useToolBilling } from '@/composables/useToolBilling'
 import { useImmersive } from '@/composables/useImmersive'
@@ -135,9 +135,23 @@ const gameRef = ref<{
   loadGame: () => boolean
   hasSave: () => boolean
   saveMeta: () => { savedAt: number; label: string } | null
+  gravityEnabled: () => boolean
+  toggleGravity: () => Promise<boolean> | boolean
 } | null>(null)
 const resumeFlag = ref(false)
 const saveMeta = ref<{ savedAt: number; label: string } | null>(null)
+// 重力感应开关（菜单 Switch 状态；组件内默认开，非 iOS 自动挂传感器）
+const gravOn = ref(true)
+
+function syncGrav(): void {
+  const g = gameRef.value?.gravityEnabled?.() ?? mpHook()?.gravityEnabled?.()
+  gravOn.value = g ?? true
+}
+
+async function toggleGrav(): Promise<void> {
+  const next = await (gameRef.value?.toggleGravity() ?? mpHook()?.toggleGravity())
+  gravOn.value = Boolean(next)
+}
 
 /** 选卡页读取存档元信息（宽松边界，仅取时间标签；无效/损坏 → null）。 */
 function refreshSaveMeta(): void {
@@ -153,6 +167,8 @@ interface MpSaveHook {
   loadGame: () => boolean
   hasSave: () => boolean
   saveMeta: () => { savedAt: number; label: string } | null
+  gravityEnabled: () => boolean
+  toggleGravity: () => Promise<boolean> | boolean
 }
 /** 组件测试/操作钩子（window.__mergePlanet），作为 gameRef 转发的兜底桥接。 */
 function mpHook(): MpSaveHook | null {
@@ -171,6 +187,11 @@ function loadFromPanel(): void {
     refreshSaveMeta()
   }
 }
+
+// 暂停菜单打开时同步重力开关当前状态（避免旧残留）
+watch(paused, (p) => {
+  if (p) syncGrav()
+})
 
 function bestOf(g: GameDef): number {
   const k = bestKey(g.id, g.difficulties[0] ?? 'classic')
@@ -206,6 +227,7 @@ function play(g: GameDef, diff?: Diff, opts: { resume?: boolean } = {}): void {
   score.value = 0
   combo.value = 0
   paused.value = false
+  gravOn.value = true
   nonce.value++
 }
 
@@ -415,15 +437,30 @@ onBeforeUnmount(() => {
       />
       <template #sheet-extra>
         <template v-if="selected.def.id === 'merge-planet'">
-          <button class="sheet-btn" @click="saveFromPanel">💾 存档（覆盖旧档）</button>
+          <button class="sheet-btn" @click="saveFromPanel">存档（覆盖旧档）</button>
           <button
             class="sheet-btn"
             :disabled="!saveMeta"
-            :style="saveMeta ? {} : { opacity: '0.45', cursor: 'not-allowed' }"
             @click="loadFromPanel"
           >
-            📂 读取存档{{ saveMeta ? `（${saveMeta.label}）` : '（无存档）' }}
+            读取存档{{ saveMeta ? `（${saveMeta.label}）` : '（无存档）' }}
           </button>
+          <div class="sheet-row">
+            <div class="sheet-row-text">
+              <span class="sheet-row-label">重力感应</span>
+              <span class="sheet-row-sub">倾斜手机滚动星球 · PC 用 A/D 键模拟</span>
+            </div>
+            <button
+              class="sheet-switch"
+              :class="{ on: gravOn }"
+              role="switch"
+              :aria-checked="gravOn"
+              type="button"
+              @click="toggleGrav"
+            >
+              <span class="sheet-knob" />
+            </button>
+          </div>
         </template>
       </template>
     </FocusStage>

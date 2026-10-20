@@ -202,6 +202,13 @@
 - matter-physics 本地 chunk `assets/matter-physics-*.js` **83.74 KB / gzip 26.21 KB**（0.20.0 MIT 锁版，@types/matter-js 0.20.2 MIT），进 SW 预缓存；merge-planet chunk **26.85 KB / gzip 9.57 KB** 懒加载后预缓存，断网可玩。
 - EdgeOne：dist 总量 **130.86 MiB**（限 5 GiB）、文件数 **154**（限 20000）、最大单文件 22.90 MiB（既有 onnx，限 25 MiB），全部通过。
 
+#### 2026-10-20 第五轮：重力开关移入暂停菜单 + 菜单样式统一
+
+- **修复重叠**：原游戏进行中右上角的重力感应 HUD 胶囊与暂停键重叠；将其从 HUD 移除，改放暂停/游戏菜单面板「重力感应」开关行（Switch 靠右），进行中右上角只剩暂停键。
+- **逻辑只挪入口**：gamma→`world.gravity.x` 的死区/lerp/clamp、PC `A/D` 模拟倾斜全部保留；开关状态仍为内存态（未新造持久化 key）。iOS13+ 在菜单开关的用户手势内调 `requestPermission()`，granted 才开，denied/不支持回退为关并轻提示；非 iOS 自动挂传感器。
+- **菜单统一样式（C）**：继续/暂停、重新开始、存档、读取存档、特效、音效、退出游戏全部共用同一 `.sheet-btn` 形状（统一圆角/内边距/字号，纯文字去 emoji），仅用颜色层级区分主操作/中性/危险红；存档/读档不再带 💾📂 独立控件；无存档时「读取存档」为 disabled 置灰并保留「（无存档）」副文案，存档时间用统一弱化小字；重力开关行纳入同一行高对齐。统一样式放在 FocusStage 非 scoped 块（限定 `.focus-stage`），供 `sheet-extra` 插槽继承。
+- E2E：HUD 无重力胶囊、暂停键 elementFromPoint 命中无遮挡；菜单各操作项同属 `.sheet-btn`、无存档读取禁用、重力开关切换生效；主链路（投放/A-D/斜碰即合/越线判负/断网）与三视口零溢出、无 pageerror 保持绿。
+
 ## 可复用经验
 
 - **离散格小游戏无需 Canvas**：2048/翻牌/华容道/三消用 CSS Grid + 状态数组即可，天然响应式、可访问、易测试；只有连续渲染/粒子才需要 rAF+Canvas。

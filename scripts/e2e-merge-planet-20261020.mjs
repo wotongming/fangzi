@@ -214,9 +214,54 @@ async function aimAt(page, x) {
 
 // —— 存档 / 读档 / 刷新续玩（localStorage 单槽，与最高分隔离）——
 async function openSheet(page) {
-  // 右上角重力感应按钮可能与 hud-btn 重叠；直接 DOM 点击触发 toggleMenu，绕过命中遮挡
+  // 游戏进行中右上角只剩暂停键（重力开关已移入菜单）；直接 DOM 点击触发 toggleMenu
   await page.evaluate(() => document.querySelector('.hud-btn')?.click())
   await page.waitForSelector('.sheet', { timeout: 5000 })
+  await page.waitForTimeout(120)
+}
+
+/** 游戏进行态 HUD：无重力开关胶囊，右上角暂停键命中可点、无遮挡。 */
+async function checkHudFree(page, label) {
+  if (await page.locator('.mp-grav').count() !== 0) fail.push(`${label} HUD 仍残留重力开关 .mp-grav`)
+  const hit = await page.evaluate(() => {
+    const b = document.querySelector('.hud-btn')
+    if (!b) return 'no-btn'
+    const r = b.getBoundingClientRect()
+    const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    return b.contains(el) || el === b ? 'ok' : 'blocked'
+  })
+  if (hit !== 'ok') fail.push(`${label} 右上角暂停键被遮挡（${hit}）`)
+}
+
+/** 菜单统一性：所有操作项共用 .sheet-btn；无存档时读取禁用；重力开关行存在且可切换。 */
+async function checkSheetUniform(page, label) {
+  // HUD 不再有重力开关胶囊
+  if (await page.locator('.mp-grav').count() !== 0) fail.push(`${label} HUD 仍残留重力开关 .mp-grav`)
+  const texts = await page.locator('.sheet .sheet-btn').allTextContents()
+  const joined = texts.join('|')
+  // 首项为 继续/暂停（菜单由控制钮唤起时可能未暂停，显示「暂停」）
+  if (!/继续|暂停/.test(texts[0] ?? '')) fail.push(`${label} 菜单缺少 继续/暂停 主操作`)
+  for (const need of ['存档', '读取存档', '重新开始', '退出游戏']) {
+    if (!joined.includes(need)) fail.push(`${label} 菜单缺少「${need}」菜单项`)
+  }
+  // 存档/读档/继续/重开/退出同为 .sheet-btn（同一控件长相）
+  const cls = await page.evaluate(() =>
+    [...document.querySelectorAll('.sheet .sheet-btn')].map((b) => b.className)
+  )
+  if (cls.some((c) => !String(c).includes('sheet-btn'))) fail.push(`${label} 存在非 .sheet-btn 的割裂菜单项`)
+  // 无存档时「读取存档」为 disabled
+  const loadBtn = page.locator('.sheet .sheet-btn', { hasText: '读取存档' })
+  if (await loadBtn.count() !== 1) fail.push(`${label} 读取存档按钮缺失`)
+  if (!(await loadBtn.isDisabled())) fail.push(`${label} 无存档时读取存档未禁用`)
+  // 重力感应开关行
+  const sw = page.locator('.sheet .sheet-switch[role="switch"]')
+  if ((await sw.count()) !== 1) fail.push(`${label} 菜单缺少重力感应开关行`)
+  const before = await page.evaluate(() => window.__mergePlanet.gravityEnabled())
+  await sw.click()
+  await page.waitForTimeout(120)
+  const after = await page.evaluate(() => window.__mergePlanet.gravityEnabled())
+  if (before === after) fail.push(`${label} 重力开关切换未生效（${before}→${after}）`)
+  await sw.click() // 切回默认开，避免影响后续
   await page.waitForTimeout(120)
 }
 
@@ -274,12 +319,14 @@ async function runPC(page) {
   await gotoPicker(page)
   await shot(page, 'mp-pc-picker.png')
   await enterGame(page)
+  await checkHudFree(page, 'pc')
   await overflow(page, 'pc-picker')
 
   // 存档/读档/刷新续玩：造局面 → 暂停面板存档 → 刷新 → 选卡继续游戏恢复分数/局面/待投
   await deterministicMerge(page, 0, 220)
   await deterministicMerge(page, 1, 300)
   await openSheet(page)
+  await checkSheetUniform(page, 'pc')
   await shot(page, 'mp-pc-pause.png')
   await saveAndReloadResume(page, 'pc')
 
@@ -358,10 +405,12 @@ async function runMobile(page) {
   await gotoPicker(page)
   await shot(page, 'mp-mobile-picker.png')
   await enterGame(page)
+  await checkHudFree(page, 'mobile')
 
   // 存档/刷新续玩（手机）：造局面 → 暂停面板存档 → 刷新 → 继续游戏恢复
   await deterministicMerge(page, 0, 180)
   await openSheet(page)
+  await checkSheetUniform(page, 'mobile')
   await shot(page, 'mp-mobile-pause.png')
   await saveAndReloadResume(page, 'mobile')
 

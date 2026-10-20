@@ -116,8 +116,6 @@ let smoothGx = 0
 let keyboardTilt = 0 // -1 左 / 0 平 / +1 右（PC 键盘 A/D 模拟倾斜）
 let gravityEnabled = true
 let sensorGranted = false
-const gravityBtnVisible = ref(false)
-const gravityOnLabel = ref('🧭 重力感应：关')
 
 // —— 手动存档（localStorage 单槽，与最高分隔离；重开/再来一局不清档）——
 const saveMsg = ref('')
@@ -470,54 +468,53 @@ interface DOEWithRequest extends DeviceOrientationEvent {
   requestPermission?: () => Promise<DOEPermission>
 }
 
-async function enableSensor(): Promise<void> {
+/** iOS13+ 在用户手势内请求传感器权限；非 iOS 直接视为可挂。成功返回 true。 */
+async function requestSensor(): Promise<boolean> {
   const doe = DeviceOrientationEvent as unknown as DOEWithRequest
   try {
     if (typeof doe.requestPermission === 'function') {
       const res = await doe.requestPermission()
       if (res !== 'granted') {
         sensorGranted = false
-        gravityBtnVisible.value = true
-        gravityOnLabel.value = '🧭 重力感应：被拒绝'
-        return
+        return false
       }
     }
     sensorGranted = true
     window.addEventListener('deviceorientation', onOrientation)
-    gravityBtnVisible.value = true
-    gravityOnLabel.value = '🧭 重力感应：开'
+    return true
   } catch {
     sensorGranted = false
-    gravityBtnVisible.value = true
-    gravityOnLabel.value = '🧭 重力感应：不可用'
+    return false
   }
 }
 
-function toggleGravity(): void {
-  // 未授权的 iOS/移动端：首次点击在用户手势内请求权限；已授权则切换开关
-  if (!sensorGranted && typeof (DeviceOrientationEvent as unknown as DOEWithRequest).requestPermission === 'function') {
-    void enableSensor()
-    return
+/**
+ * 菜单开关切换：开启时（iOS）在用户手势内授权；granted 才开，否则回退为关并轻提示。
+ * 返回当前是否处于开启。
+ */
+async function toggleGravity(): Promise<boolean> {
+  if (!gravityEnabled) {
+    const ok = await requestSensor()
+    if (!ok) {
+      gravityEnabled = false
+      sensorTargetGx = 0
+      showSaveMsg('重力感应：未授权或不可用')
+      return false
+    }
+    gravityEnabled = true
+    return true
   }
-  gravityEnabled = !gravityEnabled
-  if (!gravityEnabled) sensorTargetGx = 0
-  gravityBtnVisible.value = true
-  gravityOnLabel.value = gravityEnabled ? '🧭 重力感应：开' : '🧭 重力感应：关'
+  gravityEnabled = false
+  sensorTargetGx = 0
+  return false
 }
 
-/** 非 iOS（无需 requestPermission）：有传感器能力即挂监听，静默回退垂直。 */
+/** 非 iOS（无需 requestPermission）：有传感器能力即挂监听，静默回退垂直；iOS 等菜单手势授权。 */
 function autoAttachSensor(): void {
   const doe = DeviceOrientationEvent as unknown as DOEWithRequest
-  if (typeof doe.requestPermission === 'function') {
-    // iOS 13+：不自动挂，等用户点按钮授权
-    gravityBtnVisible.value = true
-    gravityOnLabel.value = '🧭 开启重力感应'
-    return
-  }
+  if (typeof doe.requestPermission === 'function') return
   sensorGranted = true
   window.addEventListener('deviceorientation', onOrientation)
-  gravityBtnVisible.value = true
-  gravityOnLabel.value = '🧭 重力感应：开'
 }
 
 // —— 主循环：固定步长 + 子步 ——
@@ -734,6 +731,8 @@ function exposeDebug(): void {
     loadGame,
     hasSave,
     saveMeta,
+    gravityEnabled: () => gravityEnabled,
+    toggleGravity,
     currentTier: () => currentTier,
     boardCount: () => planets.size,
     boardTiers: () => [...planets.values()].map((p) => p.tier).sort((a, b) => a - b)
@@ -830,8 +829,15 @@ onMounted(() => {
   raf = requestAnimationFrame(loop)
 })
 
-// 暴露给宿主暂停面板：存档 / 读取存档 / 查询存档状态（重开不清档由组件 reset 保证）
-defineExpose({ saveGame, loadGame, hasSave, saveMeta })
+// 暴露给宿主暂停面板：存档 / 读取存档 / 查询存档状态 / 重力感应开关（重开不清档由组件 reset 保证）
+defineExpose({
+  saveGame,
+  loadGame,
+  hasSave,
+  saveMeta,
+  gravityEnabled: () => gravityEnabled,
+  toggleGravity
+})
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(raf)
@@ -868,13 +874,6 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 重力感应开关（iOS 需用户手势授权；未授权/不支持静默回退垂直重力） -->
-    <button
-      v-if="gravityBtnVisible"
-      type="button"
-      class="mp-grav"
-      @click.stop="toggleGravity"
-    >{{ gravityOnLabel }}</button>
     <!-- 落点引导线（从顶部滑轨向下标出落点列） -->
     <div class="mp-guide" :style="guideStyle" />
 
@@ -920,20 +919,6 @@ onBeforeUnmount(() => {
   height: 76px;
   pointer-events: none;
   z-index: 5;
-}
-.mp-grav {
-  position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 10px);
-  right: calc(env(safe-area-inset-right, 0px) + 12px);
-  z-index: 6;
-  padding: 5px 11px;
-  border-radius: 999px;
-  border: 1px solid rgba(140, 180, 255, 0.25);
-  background: rgba(16, 22, 44, 0.55);
-  color: #cfe0ff;
-  font-size: 11px;
-  backdrop-filter: blur(6px);
-  pointer-events: auto;
 }
 .mp-aim {
   position: absolute;
