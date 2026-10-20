@@ -305,8 +305,17 @@ const levelChip: Record<string, string> = { danger: '风险', warn: '提醒', in
     <div class="page">
       <!-- 成员切换 -->
       <div class="member-bar">
-        <button v-for="m in members" :key="m.id" :class="['mem-chip', { on: m.id === currentId }]" @click="currentId = m.id">{{ m.name }}</button>
-        <button class="mem-chip add" @click="openAddMember">＋ 成员</button>
+        <div v-for="m in members" :key="m.id" :class="['mem-chip', { on: m.id === currentId }]">
+          <button type="button" class="mem-name" @click="currentId = m.id">{{ m.name }}</button>
+          <button
+            type="button"
+            class="mem-del"
+            :title="`删除成员「${m.name}」及其全部药品`"
+            :aria-label="`删除成员「${m.name}」及其全部药品`"
+            @click.stop="deleteMember(m)"
+          >×</button>
+        </div>
+        <button type="button" class="mem-chip add" @click="openAddMember">＋ 成员</button>
       </div>
 
       <div v-if="addingMember" class="card">
@@ -555,13 +564,14 @@ const levelChip: Record<string, string> = { danger: '风险', warn: '提醒', in
 }
 .mem-chip {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: stretch;
   border: 1px solid var(--line);
   background: var(--card);
   border-radius: 999px;
-  padding: 0.4rem 0.9rem;
   font-size: 0.95rem;
   color: var(--ink);
-  cursor: pointer;
+  overflow: hidden;
 }
 .mem-chip.on {
   background: var(--brand);
@@ -572,6 +582,36 @@ const levelChip: Record<string, string> = { danger: '风险', warn: '提醒', in
 .mem-chip.add {
   border-style: dashed;
   color: var(--brand-d);
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+}
+.mem-name {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0.4rem 0.35rem 0.4rem 0.9rem;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.mem-del {
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  opacity: 0.55;
+}
+.mem-chip.on .mem-del {
+  border-left-color: rgba(255, 255, 255, 0.35);
+}
+.mem-del:hover,
+.mem-del:active {
+  opacity: 1;
 }
 .seg {
   position: sticky;
