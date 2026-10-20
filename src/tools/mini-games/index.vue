@@ -4,6 +4,8 @@ import { manifest } from './manifest'
 import { useToolBilling } from '@/composables/useToolBilling'
 import { useImmersive } from '@/composables/useImmersive'
 import { bestKey, loadState, saveBest, saveSettings, type MiniGameSettings } from './lib/storage'
+import { TIER_COUNT } from './gpu-games/merge-planet/game/logic'
+import { SAVE_KEY, readSaveMeta } from './gpu-games/merge-planet/game/save'
 import FocusStage from './components/FocusStage.vue'
 import Game2048 from './components/Game2048.vue'
 import GameMemory from './components/GameMemory.vue'
@@ -127,6 +129,49 @@ const score = ref(0)
 const combo = ref(0)
 const paused = ref(false)
 
+// —— 合成大星球单槽手动存档（localStorage，与最高分隔离；重开不清档）——
+const gameRef = ref<{
+  saveGame: () => { ok: boolean; covered: boolean; label: string }
+  loadGame: () => boolean
+  hasSave: () => boolean
+  saveMeta: () => { savedAt: number; label: string } | null
+} | null>(null)
+const resumeFlag = ref(false)
+const saveMeta = ref<{ savedAt: number; label: string } | null>(null)
+
+/** 选卡页读取存档元信息（宽松边界，仅取时间标签；无效/损坏 → null）。 */
+function refreshSaveMeta(): void {
+  try {
+    saveMeta.value = readSaveMeta(SAVE_KEY, TIER_COUNT, { minX: 0, maxX: 4096, minY: 0, maxY: 4096 })
+  } catch {
+    saveMeta.value = null
+  }
+}
+
+interface MpSaveHook {
+  saveGame: () => { ok: boolean; covered: boolean; label: string }
+  loadGame: () => boolean
+  hasSave: () => boolean
+  saveMeta: () => { savedAt: number; label: string } | null
+}
+/** 组件测试/操作钩子（window.__mergePlanet），作为 gameRef 转发的兜底桥接。 */
+function mpHook(): MpSaveHook | null {
+  if (typeof window === 'undefined') return null
+  return (window as unknown as Record<string, MpSaveHook | undefined>).__mergePlanet ?? null
+}
+
+function saveFromPanel(): void {
+  const r = gameRef.value?.saveGame() ?? mpHook()?.saveGame()
+  if (r?.ok) refreshSaveMeta()
+}
+function loadFromPanel(): void {
+  const ok = gameRef.value?.loadGame() ?? mpHook()?.loadGame()
+  if (ok) {
+    paused.value = false
+    refreshSaveMeta()
+  }
+}
+
 function bestOf(g: GameDef): number {
   const k = bestKey(g.id, g.difficulties[0] ?? 'classic')
   return best.value[k] ?? 0
@@ -137,8 +182,8 @@ function unlocked(g: GameDef): boolean {
   return billing.canUse(g.feature ?? 'pro-library').allowed || proOwned.value
 }
 
-/** 进入游戏（必须在点击手势内同步触发沉浸/系统全屏）。 */
-function play(g: GameDef, diff?: Diff): void {
+/** 进入游戏（必须在点击手势内同步触发沉浸/系统全屏）。opts.resume=true 从存档续玩。 */
+function play(g: GameDef, diff?: Diff, opts: { resume?: boolean } = {}): void {
   if (g.soon) return
   if (!unlocked(g)) {
     paywallFor.value = g
@@ -146,6 +191,7 @@ function play(g: GameDef, diff?: Diff): void {
     return
   }
   const d = diff ?? g.difficulties[0] ?? 'classic'
+  resumeFlag.value = !!opts.resume
   void imm.enter() // 手势内尽早请求系统全屏；被拒也保留应用内沉浸
   if (g.kind === 'gpu' && g.loader) {
     stageComp.value = defineAsyncComponent({
@@ -226,6 +272,7 @@ onMounted(async () => {
   const state = await loadState()
   best.value = state.best
   settings.value = state.settings
+  refreshSaveMeta()
   flushTimer = setInterval(() => void flushBest(), 1500)
 })
 onBeforeUnmount(() => {
@@ -309,6 +356,11 @@ onBeforeUnmount(() => {
               <em v-if="bestOf(g)">最高 {{ bestOf(g) }}</em>
               <span v-else class="faint">即点即玩 · 全屏沉浸</span>
             </span>
+            <span
+              v-if="g.id === 'merge-planet' && saveMeta"
+              class="resume-chip"
+              @click.stop="play(g, undefined, { resume: true })"
+            >▶ 继续游戏（存档于 {{ saveMeta.label }}）</span>
           </button>
         </div>
       </section>
@@ -346,10 +398,12 @@ onBeforeUnmount(() => {
       @update:particle="changeParticle"
     >
       <component
+        :ref="selected.def.id === 'merge-planet' ? gameRef : undefined"
         :is="stageComp"
         :key="'g-' + selected.def.id + ':' + selected.diff + ':' + nonce"
         :difficulty="selected.diff === 'classic' ? 'normal' : selected.diff"
         :paused="selected.def.kind === 'gpu' ? paused : undefined"
+        :resume="selected.def.id === 'merge-planet' ? resumeFlag : undefined"
         v-bind="
           selected.def.kind === 'gpu'
             ? { muted: settings.muted, vibrate: settings.vibrate, particle: settings.particle }
@@ -359,6 +413,19 @@ onBeforeUnmount(() => {
         @gameover="flushBest"
         @combo="(v: number) => (combo = v)"
       />
+      <template #sheet-extra>
+        <template v-if="selected.def.id === 'merge-planet'">
+          <button class="sheet-btn" @click="saveFromPanel">💾 存档（覆盖旧档）</button>
+          <button
+            class="sheet-btn"
+            :disabled="!saveMeta"
+            :style="saveMeta ? {} : { opacity: '0.45', cursor: 'not-allowed' }"
+            @click="loadFromPanel"
+          >
+            📂 读取存档{{ saveMeta ? `（${saveMeta.label}）` : '（无存档）' }}
+          </button>
+        </template>
+      </template>
     </FocusStage>
   </div>
 </template>
@@ -443,6 +510,22 @@ onBeforeUnmount(() => {
   background: var(--surface);
 }
 .diff-chip:active { background: var(--brand-soft); }
+
+.resume-chip {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 999px;
+  color: #0a2030;
+  background: linear-gradient(90deg, #37c8ff, #6d9cff);
+  box-shadow: 0 3px 12px rgba(80, 140, 255, 0.35);
+  cursor: pointer;
+}
+.resume-chip:active { transform: scale(0.97); }
 
 .paywall {
   display: flex;

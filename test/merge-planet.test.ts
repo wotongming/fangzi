@@ -32,6 +32,20 @@ import {
   recordBest,
   type MergeNode
 } from '../src/tools/mini-games/gpu-games/merge-planet/game/logic.ts'
+import {
+  SAVE_KEY,
+  SAVE_VERSION,
+  CHAIN_ID,
+  serializeSave,
+  validateSave,
+  loadSave,
+  persistSave,
+  readSaveRaw,
+  clearSave,
+  formatSaveTime,
+  type SaveBounds,
+  type StorageLike
+} from '../src/tools/mini-games/gpu-games/merge-planet/game/save.ts'
 
 test('进化链：19 级，id/顺序正确，半径与基础分严格递增，终极为宇宙', () => {
   assert.equal(TIER_COUNT, 19)
@@ -317,4 +331,150 @@ test('旧最高分兼容：key 不变，读到旧数值即保留、不清档', (
   // 旧版本打出的高分作为 prev 直接保留，不因扩链重置
   assert.deepEqual(recordBest(9876, 120), { best: 9876, isNewBest: false })
   assert.deepEqual(recordBest(100, 50000), { best: 50000, isNewBest: true })
+})
+
+// —— 手动存档 / 读档（localStorage 单槽，与最高分隔离）——
+
+const SAVE_BOUNDS: SaveBounds = { minX: 20, maxX: 1260, minY: 80, maxY: 860 }
+
+function fakeStorage(seed: Record<string, string> = {}): StorageLike & { map: Map<string, string> } {
+  const map = new Map(Object.entries(seed))
+  return {
+    map,
+    getItem: (k: string) => (map.has(k) ? map.get(k)! : null),
+    setItem: (k: string, v: string) => map.set(k, v),
+    removeItem: (k: string) => map.delete(k)
+  }
+}
+
+test('存档①多球（含 tier0 与 tier18）序列化→校验往返：tier/位置/角度/速度/角速度/score/combo/待投一致', () => {
+  const payload = serializeSave(
+    {
+      score: 12345,
+      combo: 3,
+      currentTier: 4,
+      balls: [
+        { tier: 0, x: 120.5, y: 700, angle: 0.4, vx: 1.2, vy: -0.6, av: 0.1 },
+        { tier: 18, x: 900, y: 500, angle: 2.1, vx: -0.3, vy: 0.2, av: -0.05 }
+      ]
+    },
+    1700000000000
+  )
+  const v = validateSave(payload, TIER_COUNT, SAVE_BOUNDS)
+  assert.equal(v.ok, true)
+  assert.equal(v.dropped, 0)
+  const p = v.payload!
+  assert.equal(p.score, 12345)
+  assert.equal(p.combo, 3)
+  assert.equal(p.currentTier, 4)
+  assert.equal(p.balls.length, 2)
+  const b0 = p.balls[0]!
+  assert.equal(b0.tier, 0)
+  assert.equal(b0.x, 120.5)
+  assert.equal(b0.y, 700)
+  assert.equal(b0.angle, 0.4)
+  assert.equal(b0.vx, 1.2)
+  assert.equal(b0.vy, -0.6)
+  assert.equal(b0.av, 0.1)
+  const b18 = p.balls[1]!
+  assert.equal(b18.tier, 18)
+  assert.equal(b18.x, 900)
+  assert.equal(b18.angle, 2.1)
+  // 连击窗口计时（lastMergeAt）不进存档：恢复时由组件重置为未触发
+  assert.equal('lastMergeAt' in p, false)
+  // dangerTimer 不进存档：恢复归零，不处在判负边缘
+  assert.equal('dangerTimer' in p, false)
+})
+
+test('存档②损坏 JSON / 版本不符 / chain 不符 / tier 越界 / 位置越界(先clamp后丢球) / 负分 各自安全处理不抛错', () => {
+  const st = fakeStorage()
+  // 损坏 JSON
+  st.setItem(SAVE_KEY, '{not-json')
+  assert.equal(loadSave(SAVE_KEY, TIER_COUNT, SAVE_BOUNDS, st), null)
+
+  // 版本不符
+  st.setItem(SAVE_KEY, JSON.stringify({ ...serializeSave({ score: 1, combo: 1, currentTier: 0, balls: [] }), version: 99 }))
+  assert.equal(loadSave(SAVE_KEY, TIER_COUNT, SAVE_BOUNDS, st), null)
+
+  // chain 不符（进化表改版后旧档被安全忽略）
+  st.setItem(SAVE_KEY, JSON.stringify({ ...serializeSave({ score: 1, combo: 1, currentTier: 0, balls: [] }), chain: 'old' }))
+  assert.equal(loadSave(SAVE_KEY, TIER_COUNT, SAVE_BOUNDS, st), null)
+
+  // tier 越界（19 级表外）→ 丢球，整体仍 ok（其余合法）
+  const mixed = serializeSave({
+    score: 100,
+    combo: 1,
+    currentTier: 2,
+    balls: [
+      { tier: 0, x: 100, y: 700, angle: 0, vx: 0, vy: 0, av: 0 },
+      { tier: 99, x: 100, y: 700, angle: 0, vx: 0, vy: 0, av: 0 }
+    ]
+  })
+  const v = validateSave(mixed, TIER_COUNT, SAVE_BOUNDS)
+  assert.equal(v.ok, true)
+  assert.equal(v.dropped, 1)
+  assert.equal(v.payload!.balls.length, 1)
+  assert.equal(v.payload!.balls[0]!.tier, 0)
+
+  // 位置越界先 clamp 到场地内；非有限位置丢球（直接喂原始对象，绕过序列化预过滤）
+  const raw = {
+    version: SAVE_VERSION,
+    tool: 'merge-planet',
+    chain: CHAIN_ID,
+    savedAt: 1000,
+    score: 100,
+    combo: 1,
+    currentTier: 2,
+    balls: [
+      { tier: 1, x: -5000, y: 99999, angle: 0, vx: 0, vy: 0, av: 0 },
+      { tier: 2, x: NaN, y: 100, angle: 0, vx: 0, vy: 0, av: 0 }
+    ]
+  }
+  const v2 = validateSave(raw, TIER_COUNT, SAVE_BOUNDS)
+  assert.equal(v2.ok, true)
+  assert.equal(v2.dropped, 1) // NaN 球丢弃
+  assert.equal(v2.payload!.balls.length, 1)
+  assert.equal(v2.payload!.balls[0]!.x, SAVE_BOUNDS.minX)
+  assert.equal(v2.payload!.balls[0]!.y, SAVE_BOUNDS.maxY)
+
+  // 负分 → 回退 0，不抛错
+  const neg = serializeSave({ score: -50, combo: 0, currentTier: 3, balls: [] })
+  const v3 = validateSave(neg, TIER_COUNT, SAVE_BOUNDS)
+  assert.equal(v3.ok, true)
+  assert.equal(v3.payload!.score, 0)
+  assert.equal(v3.payload!.combo, 1)
+})
+
+test('存档③覆盖存档（后写覆盖旧档）；重新开始不清存档；读写档不影响最高分 key', () => {
+  const st = fakeStorage()
+  const bestKey = 'fz-mini-games-best-placeholder'
+  st.setItem(bestKey, '{"merge-planet:classic":8888}')
+
+  const first = serializeSave({ score: 100, combo: 1, currentTier: 0, balls: [{ tier: 0, x: 100, y: 700, angle: 0, vx: 0, vy: 0, av: 0 }] }, 1000)
+  persistSave(first, SAVE_KEY, st)
+  const second = serializeSave({ score: 500, combo: 2, currentTier: 4, balls: [] }, 2000)
+  persistSave(second, SAVE_KEY, st)
+  const loaded = loadSave(SAVE_KEY, TIER_COUNT, SAVE_BOUNDS, st)
+  assert.equal(loaded!.score, 500) // 后写覆盖
+  assert.equal(loaded!.combo, 2)
+  assert.equal(loaded!.currentTier, 4)
+
+  // 「重新开始」只清当前局，绝不调用 clearSave：存档仍在
+  assert.ok(readSaveRaw(SAVE_KEY, st))
+  // 最高分 key 内容原样未动
+  assert.equal(st.getItem(bestKey), '{"merge-planet:classic":8888}')
+
+  // 仅显式清除才删除存档
+  clearSave(SAVE_KEY, st)
+  assert.equal(loadSave(SAVE_KEY, TIER_COUNT, SAVE_BOUNDS, st), null)
+  // 显式清档也不动最高分
+  assert.equal(st.getItem(bestKey), '{"merge-planet:classic":8888}')
+})
+
+test('存档④时间格式化 MM-DD HH:mm；无存档/非法时间返回空串；常量口径', () => {
+  assert.match(formatSaveTime(1700000000000), /^\d{2}-\d{2} \d{2}:\d{2}$/)
+  assert.equal(formatSaveTime(NaN), '')
+  assert.equal(formatSaveTime(0), '')
+  assert.equal(SAVE_VERSION, 1)
+  assert.equal(CHAIN_ID, 'merge-planet:tiers:19:v1')
 })

@@ -212,12 +212,76 @@ async function aimAt(page, x) {
   await page.waitForTimeout(120)
 }
 
+// —— 存档 / 读档 / 刷新续玩（localStorage 单槽，与最高分隔离）——
+async function openSheet(page) {
+  // 右上角重力感应按钮可能与 hud-btn 重叠；直接 DOM 点击触发 toggleMenu，绕过命中遮挡
+  await page.evaluate(() => document.querySelector('.hud-btn')?.click())
+  await page.waitForSelector('.sheet', { timeout: 5000 })
+  await page.waitForTimeout(120)
+}
+
+/** 走真实暂停面板「存档」按钮，断言轻提示出现。 */
+async function saveViaUI(page) {
+  await openSheet(page)
+  await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('.sheet-btn')]
+    btns.find((b) => b.textContent?.includes('存档'))?.click()
+  })
+  await page.waitForSelector('.mp-toast', { timeout: 3000 })
+}
+
+const snapshot = (page) =>
+  page.evaluate(() => ({
+    score: window.__mergePlanet.score(),
+    tiers: window.__mergePlanet.boardTiers(),
+    cur: window.__mergePlanet.currentTier(),
+    n: window.__mergePlanet.boardCount()
+  }))
+
+/** 刷新页面 → 选卡出现「继续游戏（存档时间）」→ 点击续玩，断言局面/分数/待投恢复。 */
+async function saveAndReloadResume(page, label) {
+  const before = await snapshot(page)
+  await saveViaUI(page)
+  const meta = await page.evaluate(() => window.__mergePlanet.saveMeta())
+  log(`[${label}] saveMeta =`, JSON.stringify(meta))
+  if (!meta || !meta.label) fail.push(`${label} 存档后无 saveMeta/时间`)
+
+  await page.reload({ waitUntil: 'networkidle' })
+  await gotoPicker(page)
+  const chip = page.locator('.resume-chip')
+  if (!(await chip.count())) fail.push(`${label} 刷新后选卡未出现「继续游戏」入口`)
+  await shot(page, label === 'mobile' ? 'mp-mobile-resume.png' : 'mp-pc-resume.png')
+  await chip.first().click()
+  await page.waitForSelector('.focus-stage', { timeout: 20000 })
+  await page.waitForFunction(() => !!window.__mergePlanet, { timeout: 15000 })
+  await page.waitForTimeout(350)
+  const after = await snapshot(page)
+  log(`[${label}] before=`, JSON.stringify(before), 'after=', JSON.stringify(after))
+  if (after.score !== before.score) fail.push(`${label} 刷新续玩分数未恢复（${before.score}→${after.score}）`)
+  if (after.n !== before.n) fail.push(`${label} 刷新续玩球数量未恢复（${before.n}→${after.n}）`)
+  if (JSON.stringify(after.tiers) !== JSON.stringify(before.tiers)) {
+    fail.push(`${label} 刷新续玩等级集合未恢复`)
+  }
+  if (after.cur !== before.cur) fail.push(`${label} 刷新续玩当前待投 tier 未恢复`)
+  // 重开不清档：当前局 reset 后，手动存档仍在（hasSave 仍为真）
+  await page.evaluate(() => window.__mergePlanet.reset())
+  const still = await page.evaluate(() => window.__mergePlanet.hasSave())
+  if (!still) fail.push(`${label} 重新开始后手动存档被误清`)
+}
+
 // —— PC：选卡 / 投放 / 合成升级 / 连锁 / 越线判负 / 重开 ——
 async function runPC(page) {
   await gotoPicker(page)
   await shot(page, 'mp-pc-picker.png')
   await enterGame(page)
   await overflow(page, 'pc-picker')
+
+  // 存档/读档/刷新续玩：造局面 → 暂停面板存档 → 刷新 → 选卡继续游戏恢复分数/局面/待投
+  await deterministicMerge(page, 0, 220)
+  await deterministicMerge(page, 1, 300)
+  await openSheet(page)
+  await shot(page, 'mp-pc-pause.png')
+  await saveAndReloadResume(page, 'pc')
 
   // 全宽可投：无「下一个」胶囊，最左/最右均可贴墙（PC 1280×860）
   await assertFullWidthAim(page, 'pc')
@@ -294,6 +358,12 @@ async function runMobile(page) {
   await gotoPicker(page)
   await shot(page, 'mp-mobile-picker.png')
   await enterGame(page)
+
+  // 存档/刷新续玩（手机）：造局面 → 暂停面板存档 → 刷新 → 继续游戏恢复
+  await deterministicMerge(page, 0, 180)
+  await openSheet(page)
+  await shot(page, 'mp-mobile-pause.png')
+  await saveAndReloadResume(page, 'mobile')
 
   // 全宽可投：无「下一个」胶囊，最左/最右均可贴墙（手机 375×812）
   await assertFullWidthAim(page, 'mobile')

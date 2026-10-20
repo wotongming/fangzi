@@ -27,9 +27,21 @@ import {
   lerpGravityX,
   planMerges,
   SPAWN_GRACE_MS,
+  TIER_COUNT,
   type OverlineState
 } from './game/logic'
 import { makeStarfield, drawSpaceBackground, paintPlanet, hash01, type Star } from './game/render'
+import {
+  SAVE_KEY,
+  serializeSave,
+  persistSave,
+  loadSave,
+  readSaveRaw,
+  readSaveMeta,
+  formatSaveTime,
+  type SavePayload,
+  type SaveBounds
+} from './game/save'
 
 const props = withDefaults(
   defineProps<{
@@ -38,8 +50,10 @@ const props = withDefaults(
     muted?: boolean
     vibrate?: boolean
     particle?: 'auto' | 'high' | 'low'
+    /** 从选卡「继续游戏」进入：挂载后自动读取本地单槽存档续玩。 */
+    resume?: boolean
   }>(),
-  { paused: false, muted: false, vibrate: true, particle: 'auto', difficulty: 'normal' }
+  { paused: false, muted: false, vibrate: true, particle: 'auto', difficulty: 'normal', resume: false }
 )
 
 const emit = defineEmits<{
@@ -104,6 +118,95 @@ let gravityEnabled = true
 let sensorGranted = false
 const gravityBtnVisible = ref(false)
 const gravityOnLabel = ref('🧭 重力感应：关')
+
+// —— 手动存档（localStorage 单槽，与最高分隔离；重开/再来一局不清档）——
+const saveMsg = ref('')
+let saveMsgTimer: ReturnType<typeof setTimeout> | null = null
+
+function showSaveMsg(text: string): void {
+  saveMsg.value = text
+  if (saveMsgTimer) clearTimeout(saveMsgTimer)
+  saveMsgTimer = setTimeout(() => (saveMsg.value = ''), 2400)
+}
+
+/** 当前视口内的合法位置夹取边界（墙体/安全区）。 */
+function saveBounds(): SaveBounds {
+  return { minX: WALL + 4, maxX: Math.max(WALL + 4, W - WALL - 4), minY: railH + 8, maxY: Math.max(railH + 8, H - WALL) }
+}
+
+/** 序列化并覆盖写入单槽存档；返回是否成功与存档时间标签。 */
+function saveGame(): { ok: boolean; covered: boolean; label: string } {
+  const balls = [...planets.values()].map((p) => ({
+    tier: p.tier,
+    x: p.body.position.x,
+    y: p.body.position.y,
+    angle: p.body.angle,
+    vx: p.body.velocity.x,
+    vy: p.body.velocity.y,
+    av: p.body.angularVelocity
+  }))
+  const covered = !!readSaveRaw(SAVE_KEY)
+  const payload = serializeSave({ score: score.value, combo: combo.value, currentTier, balls })
+  const ok = persistSave(payload, SAVE_KEY)
+  if (ok) {
+    showSaveMsg(`已${covered ? '覆盖旧' : '新'}存档 · ${formatSaveTime(payload.savedAt)}`)
+  } else {
+    showSaveMsg('存档失败（本机存储不可用）')
+  }
+  return { ok, covered, label: formatSaveTime(payload.savedAt) }
+}
+
+/** 是否存在有效存档（供暂停面板「读取存档」禁用态）。 */
+function hasSave(): boolean {
+  return loadSave(SAVE_KEY, TIER_COUNT, saveBounds()) !== null
+}
+
+/** 读取存档元信息（时间标签），无档返回 null。 */
+function saveMeta(): { savedAt: number; label: string } | null {
+  return readSaveMeta(SAVE_KEY, TIER_COUNT, saveBounds())
+}
+
+/** 用校验后的存档重建局面：清旧球、按刚体状态恢复、重置冷却/连击窗口/死亡线。 */
+function restoreFromSave(p: SavePayload): void {
+  if (engine) {
+    for (const pl of planets.values()) Matter.Composite.remove(engine.world, pl.body)
+    planets.clear()
+  }
+  particles = []
+  score.value = p.score
+  combo.value = Math.max(1, p.combo)
+  currentTier = p.currentTier
+  syncQueueLabels()
+  for (const b of p.balls) {
+    const sp = spawnPlanet(b.tier, b.x, b.y, false)
+    Matter.Body.setPosition(sp.body, { x: b.x, y: b.y })
+    Matter.Body.setAngle(sp.body, b.angle)
+    Matter.Body.setVelocity(sp.body, { x: b.vx, y: b.vy })
+    Matter.Body.setAngularVelocity(sp.body, b.av)
+  }
+  // 恢复：可立即投放、连击窗口未触发、死亡线归零、回到进行态
+  overline = createOverline()
+  overNotified = false
+  phase.value = 'play'
+  lastDropAt = -Infinity
+  inFlight = false
+  lastDropped = null
+  lastMergeAt = -Infinity
+  aimX = W / 2
+  const { min, max } = settleRange()
+  aimX = clampAim(aimX, min, max)
+  emit('score', score.value)
+  emit('combo', combo.value)
+}
+
+/** 从单槽存档续玩；无效/损坏安全回退 false（不抛错、不白屏）。 */
+function loadGame(): boolean {
+  const p = loadSave(SAVE_KEY, TIER_COUNT, saveBounds())
+  if (!p) return false
+  restoreFromSave(p)
+  showSaveMsg(`已读取存档 · ${formatSaveTime(p.savedAt)}`)
+  return true
+}
 
 // —— 表现层 ——
 interface Particle {
@@ -625,7 +728,15 @@ function exposeDebug(): void {
     gravityX: () => (engine ? engine.gravity.x : 0),
     // 测试接缝：直接取某球当前 x（倾斜滚动位移断言用）
     planetX: (id: number) => planets.get(id)?.body.position.x ?? null,
-    planetY: (id: number) => planets.get(id)?.body.position.y ?? null
+    planetY: (id: number) => planets.get(id)?.body.position.y ?? null,
+    // 存档/读档测试接缝
+    saveGame,
+    loadGame,
+    hasSave,
+    saveMeta,
+    currentTier: () => currentTier,
+    boardCount: () => planets.size,
+    boardTiers: () => [...planets.values()].map((p) => p.tier).sort((a, b) => a - b)
   }
 }
 
@@ -708,6 +819,8 @@ onMounted(() => {
   resize()
   aimX = W / 2
   exposeDebug()
+  // 选卡「继续游戏」进入：自动读取单槽存档续玩（无效/损坏安全回退新开局）
+  if (props.resume) loadGame()
   styleHostHud()
   autoAttachSensor()
   ro = new ResizeObserver(() => resize())
@@ -717,9 +830,13 @@ onMounted(() => {
   raf = requestAnimationFrame(loop)
 })
 
+// 暴露给宿主暂停面板：存档 / 读取存档 / 查询存档状态（重开不清档由组件 reset 保证）
+defineExpose({ saveGame, loadGame, hasSave, saveMeta })
+
 onBeforeUnmount(() => {
   cancelAnimationFrame(raf)
   if (comboTimer) clearTimeout(comboTimer)
+  if (saveMsgTimer) clearTimeout(saveMsgTimer)
   ro?.disconnect()
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('keyup', onKeyUp)
@@ -760,6 +877,11 @@ onBeforeUnmount(() => {
     >{{ gravityOnLabel }}</button>
     <!-- 落点引导线（从顶部滑轨向下标出落点列） -->
     <div class="mp-guide" :style="guideStyle" />
+
+    <!-- 存档/读档轻提示（底部居中，自动隐去） -->
+    <transition name="mp-toast">
+      <div v-if="saveMsg" class="mp-toast">{{ saveMsg }}</div>
+    </transition>
 
     <!-- 结算 -->
     <div v-if="phase !== 'play'" class="mp-result">
@@ -838,6 +960,27 @@ onBeforeUnmount(() => {
   pointer-events: none;
   z-index: 4;
 }
+
+.mp-toast {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 36px);
+  transform: translateX(-50%);
+  z-index: 12;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: rgba(16, 22, 44, 0.82);
+  border: 1px solid rgba(140, 180, 255, 0.3);
+  color: #dce8ff;
+  font-size: 13px;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+.mp-toast-enter-active,
+.mp-toast-leave-active { transition: opacity 0.25s ease, transform 0.25s ease; }
+.mp-toast-enter-from,
+.mp-toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(8px); }
 
 .mp-result {
   position: absolute;

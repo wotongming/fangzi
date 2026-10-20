@@ -177,6 +177,8 @@ onBeforeUnmount(() => {
           {{ paused ? '▶ 继续' : '❚❚ 暂停' }}
         </button>
         <button class="sheet-btn" @click="restart">↻ 重新开始</button>
+        <!-- 游戏自定义扩展按钮（如存档/读取存档），由父级按需填充 -->
+        <slot name="sheet-extra" />
         <button v-if="kind === 'gpu'" class="sheet-btn" @click="cycleParticle">
           ✨ 特效：{{ PARTICLE_LABEL[particle] }}
         </button>

@@ -233,3 +233,32 @@ WebGPU/WGSL 原生后端；主题/色盲模式。
 - 霓虹旋律模式当前为"漏击不判负、只影响得分"，后续可加逐键精确计分/评级（S/A/B）与节拍校准。
 - 炫光目标块数当前固定 60，可按难度分档。
 - WebGPU 原生后端、主题/色盲模式仍未做。
+
+## 合成大星球 · 手动存档 / 读档续玩（单槽 localStorage）
+
+### 改动与数据结构
+
+- 新增纯逻辑模块 `game/save.ts`（无 DOM/matter 依赖，可单测）：`serializeSave / validateSave / loadSave / persistSave / readSaveMeta / formatSaveTime`。
+- 存储：`localStorage` key `fangzi:merge-planet:save:v1`（单槽，再存覆盖旧档）；与最高分（IndexedDB `fz-mini-games-v1`）**完全隔离**，读档/重开/存档都不清空、不错误改写最高分。
+- 存档字段：`version=1 / tool=merge-planet / chain=merge-planet:tiers:19:v1 / savedAt(ms) / score / combo / currentTier / balls[]`；每球 `{tier,x,y,angle,vx,vy,av}`。**不存** `lastMergeAt`（连击窗口恢复即未触发）与 `dangerTimer`（恢复归零，不处在判负边缘）；冷却恢复为可投，未来投放照常随机，只存当前待投 tier。
+
+### 校验与安全回退
+
+- 反序列化严格校验：版本/tool/chain 不符、JSON 损坏、tier 非整数或越界、位置非有限 → 丢球；位置越界先 clamp 到场地内仍非法则丢球；score/combo 非负有限否则回退默认；整体失败 → 视为无有效存档，安全回退新开局，**绝不白屏/抛错**；19 级表以后增减，旧档因 chain/version 不符被忽略而不崩。
+- 恢复：清旧刚体 → 按 tier 用 `ballRadius` 重建刚体并 `setPosition/setAngle/setVelocity/setAngularVelocity`；重置冷却、连击窗口、死亡线、回到 play。
+
+### 两入口与重开隔离
+
+- 暂停面板（FocusStage `#sheet-extra` 插槽）：💾 存档（覆盖旧档，轻提示"已覆盖旧存档 · MM-DD HH:mm"）、📂 读取存档（无档禁用并显示"无存档"，有档显示时间）。
+- 选卡页：检测有效存档显示「▶ 继续游戏（存档于 MM-DD HH:mm）」，点击带 `resume` 进入自动读档。
+- 「↻ 重新开始 / 再来一局」只清当前局，**不调用 clearSave**，手动存档保留到被新存档覆盖。
+
+### 验证覆盖
+
+- 单测 `test/merge-planet.test.ts` 新增 4 例（多球 tier0/18 往返一致、损坏/版本/chain/tier 越界/位置 clamp/负分安全、覆盖存档+重开不清档+不动最高分 key、时间格式化与常量）；`npm test` **432/432** 全绿（基线 428 +4）。
+- E2E（PC1280×860 / 平板834×1112 / 手机375×812）：暂停面板真实存档 → **刷新页面** → 选卡继续游戏恢复 score/等级集合/球数/当前待投；重开不清档；主链路（全宽投放/重力倾斜 A-D/斜碰即合/越线1.75s判负/断网）回归全绿，0 横向溢出、无 pageerror。
+- 截图（非 0 PNG，已目检）：mp-pc-pause.png（暂停面板含 暂停/重开/存档/读取存档/特效/音效/退出）、mp-pc-resume.png（选卡继续游戏入口+存档时间）、mp-mobile-pause.png、mp-mobile-resume.png。
+
+### EdgeOne 限额复核（本次构建）
+
+- dist 总量 **132 MiB**（<5GiB）、文件 **154**（<20000）、单文件最大 onnx 模型 ≈22.9 MiB（<25MiB）；matter-physics 本地 chunk 83.74KB / gzip 25.3KB、merge-planet chunk 25.27KB / gzip 8.7KB，均进 SW 预缓存，断网可玩。
