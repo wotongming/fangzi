@@ -1,5 +1,5 @@
 /**
- * 2026-10-20 「合成大星球」(merge-planet) 三视口 E2E（matter.js 本地物理 + Canvas2D）。
+ * 2026-10-20 「合成宇宙」(merge-planet，原名合成大星球) 三视口 E2E（matter.js 本地物理 + Canvas2D）。
  *
  * 视口：PC 1280×860 / 平板 834×1112 / 手机 375×812。
  * 覆盖：选卡进入 → 真实投放（指针滑轨）→ 同级确定性合成升级与加分 → 连锁 →
@@ -45,8 +45,8 @@ const shot = (page, name) => page.screenshot({ path: join(SHOTS, name) }).then((
 const gotoPicker = async (page) => {
   await page.goto(`${ORIGIN}/#/t/mini-games`)
   await page.waitForSelector('.gcard', { timeout: 20000 })
-  // 把「合成大星球」卡片滚入视野，便于选卡截图直接看到新游戏
-  await page.locator('.gcard', { hasText: '合成大星球' }).first().scrollIntoViewIfNeeded()
+  // 把「合成宇宙」卡片滚入视野，便于选卡截图直接看到新游戏
+  await page.locator('.gcard', { hasText: '合成宇宙' }).first().scrollIntoViewIfNeeded()
   await page.waitForTimeout(200)
 }
 
@@ -57,7 +57,7 @@ async function overflow(page, label) {
 }
 
 async function enterGame(page) {
-  await page.locator('.gcard', { hasText: '合成大星球' }).first().click()
+  await page.locator('.gcard', { hasText: '合成宇宙' }).first().click()
   await page.waitForSelector('.focus-stage', { timeout: 20000 })
   await page.waitForFunction(() => !!window.__mergePlanet, { timeout: 15000 })
   const cs = await page.evaluate(() => {
@@ -65,7 +65,7 @@ async function enterGame(page) {
     return c ? { w: c.width, h: c.height } : { w: 0, h: 0 }
   })
   log('canvas backing =', JSON.stringify(cs))
-  if (cs.w < 10 || cs.h < 10) fail.push(`合成大星球 canvas backing 异常 ${JSON.stringify(cs)}`)
+  if (cs.w < 10 || cs.h < 10) fail.push(`合成宇宙 canvas backing 异常 ${JSON.stringify(cs)}`)
 }
 
 const scoreNow = (page) => page.evaluate(() => window.__mergePlanet.score())
@@ -460,7 +460,7 @@ async function run() {
     for (const f of fail) console.error(' -', f)
     process.exit(1)
   }
-  console.log('\n✅ 合成大星球三视口 E2E（投放/合成/连锁/越线判负/重开/断网/不遮挡）全部通过')
+  console.log('\n✅ 合成宇宙三视口 E2E（投放/合成/连锁/越线判负/重开/断网/不遮挡）全部通过')
 }
 
 run().catch((e) => {

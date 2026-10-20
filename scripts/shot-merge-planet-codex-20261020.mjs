@@ -1,5 +1,5 @@
 /**
- * shot-merge-planet-codex-20261020.mjs —— 合成大星球「19 天体图鉴」出图脚本（可选复用，不进 build/SW）。
+ * shot-merge-planet-codex-20261020.mjs —— 合成宇宙（merge-planet）「19 天体图鉴」出图脚本（可选复用，不进 build/SW）。
  *
  * 不另写画法：页面内 import 游戏真实 game/render.ts 的 paintPlanet / drawSpaceBackground，
  * 按 logic.ts 的 TIERS 顺序逐个绘制。自启一次性 vite dev 服务源码，回传 dataURL 落盘 PNG。
@@ -69,7 +69,7 @@ async function DRAW() {
   pc.textAlign = 'center'
   pc.font = '800 40px "PingFang SC","Microsoft YaHei",system-ui,sans-serif'
   pc.fillStyle = '#eaf2ff'
-  pc.fillText('合成大星球 · 19 天体图鉴', 800, 72)
+  pc.fillText('合成宇宙 · 19 天体图鉴', 800, 72)
   pc.font = '500 18px system-ui,sans-serif'
   pc.fillStyle = 'rgba(180,205,240,0.8)'
   pc.fillText('陨石 → 月球 → … → 宇宙，同级合成逐级进化，合成宇宙即通关', 800, 108)
@@ -112,7 +112,7 @@ async function DRAW() {
   mob.textAlign = 'center'
   mob.font = '800 30px "PingFang SC","Microsoft YaHei",system-ui,sans-serif'
   mob.fillStyle = '#eaf2ff'
-  mob.fillText('合成大星球 · 19 天体图鉴', W / 2, 56)
+  mob.fillText('合成宇宙 · 19 天体图鉴', W / 2, 56)
   let y = 120
   const Rm = 46
   const section = (header, from, count) => {

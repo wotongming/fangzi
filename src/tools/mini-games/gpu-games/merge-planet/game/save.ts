@@ -1,5 +1,5 @@
 /**
- * 合成大星球（Merge Planet）—— 单槽手动存档（纯逻辑，无 DOM / matter 依赖，可单测）。
+ * 合成宇宙（Merge Cosmos，内部 id merge-planet）—— 单槽手动存档（纯逻辑，无 DOM / matter 依赖，可单测）。
  *
  * - 单一存档槽：再次存档覆盖旧档；与最高分（IndexedDB `fz-mini-games-v1`）完全隔离，
  *   读档 / 重开 / 存档都不清空、不错误改写最高分。

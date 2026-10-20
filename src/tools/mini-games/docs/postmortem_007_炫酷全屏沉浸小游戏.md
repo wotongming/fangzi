@@ -234,7 +234,9 @@ WebGPU/WGSL 原生后端；主题/色盲模式。
 - 炫光目标块数当前固定 60，可按难度分档。
 - WebGPU 原生后端、主题/色盲模式仍未做。
 
-## 合成大星球 · 手动存档 / 读档续玩（单槽 localStorage）
+## 合成宇宙（原名「合成大星球」，内部 id merge-planet）· 手动存档 / 读档续玩（单槽 localStorage）
+
+> 显示名由「合成大星球」更名为「合成宇宙」（Merge Cosmos）；目录、注册 id `merge-planet`、存档键 `fangzi:merge-planet:save:v1`、最高分库 `fz-mini-games-v1` 均不变，老用户最高分与存档改名后仍可读。
 
 ### 改动与数据结构
 

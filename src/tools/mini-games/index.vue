@@ -92,7 +92,7 @@ const NEON: GameDef[] = [
 const ORBIT: GameDef[] = [
   {
     id: 'merge-planet',
-    name: '合成大星球',
+    name: '合成宇宙',
     icon: '🪐',
     desc: '顶部滑轨瞄准投放，同级星球相撞合成进化，从陨石一路合成到终极宇宙',
     pro: false,
@@ -129,7 +129,7 @@ const score = ref(0)
 const combo = ref(0)
 const paused = ref(false)
 
-// —— 合成大星球单槽手动存档（localStorage，与最高分隔离；重开不清档）——
+// —— 合成宇宙（merge-planet）单槽手动存档（localStorage，与最高分隔离；重开不清档）——
 const gameRef = ref<{
   saveGame: () => { ok: boolean; covered: boolean; label: string }
   loadGame: () => boolean
@@ -370,7 +370,7 @@ onBeforeUnmount(() => {
         <div class="pw-icon">{{ paywallFor.icon }}</div>
         <h3>「{{ paywallFor.name }}」是专业版游戏</h3>
         <p class="faint">
-          免费版可畅玩 2048、记忆翻牌、炫光连消、合成大星球。升级专业版一次买断，解锁数字华容道以及霓虹脉冲、
+          免费版可畅玩 2048、记忆翻牌、炫光连消、合成宇宙。升级专业版一次买断，解锁数字华容道以及霓虹脉冲、
           星轨穿梭等更多 GPU 炫光游戏，后续持续加入，无广告。
         </p>
         <button class="btn btn-primary big" :disabled="buying" @click="upgrade">

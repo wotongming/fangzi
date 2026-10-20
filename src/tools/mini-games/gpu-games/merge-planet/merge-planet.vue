@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 合成大星球（Merge Planet）—— matter.js 真实物理 + Canvas2D 程序化美术。
+ * 合成宇宙（Merge Cosmos，内部 id merge-planet）—— matter.js 真实物理 + Canvas2D 程序化美术。
  *
  * 玩法：顶部滑轨瞄准投放星球，两颗同级接触合成更高一级（共 19 级，陨石→…→宇宙）；
  * 连锁连击加分；合成宇宙（终极）通关大爆发；球体越过警戒线并持续约 1.75s 判负（瞬时擦过不算）。
