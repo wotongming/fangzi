@@ -34,7 +34,7 @@ export interface TierDef {
  * 分值按等级平方/指数递增、高级跃迁分差更大；合成第 18 级（宇宙）即通关大爆发结算。
  */
 export const TIERS: TierDef[] = [
-  { index: 0, id: 'meteorite', name: '陨石', radius: 0.06, baseScore: 10, hue: 24, sat: 14, light: 42 },
+  { index: 0, id: 'meteorite', name: '陨石', radius: 0.06, baseScore: 10, hue: 18, sat: 72, light: 34 },
   { index: 1, id: 'moon', name: '月球', radius: 0.11, baseScore: 20, hue: 220, sat: 8, light: 66 },
   { index: 2, id: 'mercury', name: '水星', radius: 0.16, baseScore: 30, hue: 28, sat: 18, light: 58 },
   { index: 3, id: 'mars', name: '火星', radius: 0.21, baseScore: 50, hue: 12, sat: 62, light: 52 },

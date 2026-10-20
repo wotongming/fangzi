@@ -143,6 +143,87 @@ function craters(ctx: CanvasRenderingContext2D, x: number, y: number, r: number,
   }
 }
 
+/** 火流星（陨石 index0）：深炭黑岩石本体 + 烧蚀橙红熔壳亮边 + 暖黄熔岩裂纹 + 反向彗尾火焰。 */
+function drawMeteor(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, seed: number, timeSec: number): void {
+  const flicker = 1 + Math.sin(timeSec * 9 + seed) * 0.08
+  // 反向彗尾火焰（固定朝左下，模拟运动反方向的拖尾），先画在岩石之后
+  const tailA = Math.PI * 0.78
+  const tx = x + Math.cos(tailA) * r * 0.9
+  const ty = y + Math.sin(tailA) * r * 0.9
+  for (let i = 3; i >= 1; i--) {
+    const len = r * (0.9 + i * 0.32) * flicker
+    const ex = tx + Math.cos(tailA) * len
+    const ey = ty + Math.sin(tailA) * len
+    const tg = ctx.createRadialGradient(tx, ty, 0, ex, ey, len)
+    tg.addColorStop(0, `rgba(255,180,70,${0.32 / i})`)
+    tg.addColorStop(1, 'rgba(255,90,30,0)')
+    ctx.fillStyle = tg
+    ctx.beginPath()
+    ctx.ellipse(tx + Math.cos(tailA) * len * 0.5, ty + Math.sin(tailA) * len * 0.5, len * 0.55, len * 0.26, tailA, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  // 外层熔壳辉光（小尺寸也一眼可认的高饱和橙红）
+  const halo = ctx.createRadialGradient(x, y, r * 0.5, x, y, r * 1.7 * flicker)
+  halo.addColorStop(0, 'rgba(255,120,40,0.45)')
+  halo.addColorStop(0.6, 'rgba(220,70,30,0.18)')
+  halo.addColorStop(1, 'rgba(200,60,20,0)')
+  ctx.fillStyle = halo
+  ctx.beginPath()
+  ctx.arc(x, y, r * 1.7 * flicker, 0, Math.PI * 2)
+  ctx.fill()
+
+  // 深炭黑岩石本体
+  const body = ctx.createRadialGradient(x - r * 0.3, y - r * 0.35, r * 0.1, x, y, r)
+  body.addColorStop(0, '#3b312d')
+  body.addColorStop(0.6, '#1c1715')
+  body.addColorStop(1, '#0a0808')
+  ctx.fillStyle = body
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+  ctx.fill()
+
+  clipCircle(ctx, x, y, r, () => {
+    // 暗坑纹理
+    for (let i = 0; i < 5; i++) {
+      const a = hash01(seed * 11 + i) * Math.PI * 2
+      const d = hash01(seed * 13 + i) * r * 0.6
+      ctx.fillStyle = `rgba(0,0,0,${0.18 + hash01(seed + i) * 0.2})`
+      ctx.beginPath()
+      ctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, r * (0.08 + hash01(i) * 0.1), 0, Math.PI * 2)
+      ctx.fill()
+    }
+    // 暖黄熔岩裂纹（锯齿折线，发光）
+    ctx.lineCap = 'round'
+    for (let i = 0; i < 5; i++) {
+      const a0 = hash01(seed * 21 + i) * Math.PI * 2
+      let px = x + Math.cos(a0) * r * 0.2
+      let py = y + Math.sin(a0) * r * 0.2
+      ctx.strokeStyle = `rgba(255,${150 + Math.floor(hash01(i) * 60)},60,${0.5 + hash01(seed + i) * 0.3})`
+      ctx.lineWidth = Math.max(0.7, r * 0.035)
+      ctx.beginPath()
+      ctx.moveTo(px, py)
+      for (let s = 1; s <= 3; s++) {
+        px += (hash01(seed * 31 + i * 7 + s) - 0.5) * r * 0.5
+        py += (hash01(seed * 33 + i * 5 + s) - 0.5) * r * 0.5
+        ctx.lineTo(px, py)
+      }
+      ctx.stroke()
+    }
+  })
+
+  // 烧蚀熔壳亮边（橙红，朝尾侧更亮）
+  const rim = ctx.createLinearGradient(x - r, y - r, x + r, y + r)
+  rim.addColorStop(0, 'rgba(255,190,90,0.9)')
+  rim.addColorStop(0.5, 'rgba(255,110,40,0.75)')
+  rim.addColorStop(1, 'rgba(200,60,25,0.55)')
+  ctx.lineWidth = r * 0.14
+  ctx.strokeStyle = rim
+  ctx.beginPath()
+  ctx.arc(x, y, r * 0.96, 0, Math.PI * 2)
+  ctx.stroke()
+}
+
 /** 画一颗星球（含土星环/黑洞吸积盘等专属特征）。 */
 export function paintPlanet(
   ctx: CanvasRenderingContext2D,
@@ -164,17 +245,8 @@ export function paintPlanet(
   if (tierIndex === 7) drawSaturnRing(ctx, x, y, r, true)
 
   switch (tierIndex) {
-    case 0: // 陨石：灰褐色岩石 + 坑洼
-      baseSphere(ctx, x, y, r, tier)
-      clipCircle(ctx, x, y, r, () => {
-        craters(ctx, x, y, r, seed, 6, 'rgba(40,32,28,0.5)')
-        for (let i = 0; i < 5; i++) {
-          ctx.fillStyle = `rgba(60,48,40,${0.18 + hash01(seed + i) * 0.2})`
-          ctx.beginPath()
-          ctx.arc(x + (hash01(seed * 5 + i) - 0.5) * r * 1.2, y + (hash01(seed * 6 + i) - 0.5) * r * 1.2, r * 0.22, 0, Math.PI * 2)
-          ctx.fill()
-        }
-      })
+    case 0: // 陨石（火流星）：深炭黑岩石 + 烧蚀橙红熔壳 + 熔岩裂纹 + 彗尾火焰，与灰色岩石星球区分
+      drawMeteor(ctx, x, y, r, seed, timeSec)
       break
     case 1: // 月球：灰 + 深色月海 + 带明暗边的环形山
       baseSphere(ctx, x, y, r, tier)
