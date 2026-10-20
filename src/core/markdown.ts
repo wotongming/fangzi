@@ -41,12 +41,36 @@ function renderTable(header: string[], body: string[][]): string {
   return `<table><thead><tr>${th}</tr></thead>${rows ? `<tbody>${rows}</tbody>` : ''}</table>`
 }
 
+const IMG_EXT_RE = /\.(png|jpe?g|webp|gif|svg|avif)$/i
+
+/**
+ * 校验图片 URL 是否安全：仅允许同源绝对路径（单个 / 开头、非 //）或相对路径
+ * （./、../、裸文件名），扩展名限常见图片；拒绝 // 协议相对、任何含 : 的方案
+ * （http(s)://、javascript:、data: 等）与引号/尖括号。不安全返回 null。
+ */
+function safeImageSrc(url: string): string | null {
+  const u = url.trim()
+  if (!u || u.includes(':') || u.startsWith('//') || /["'<>]/.test(u)) return null
+  const path = u.split(/[?#]/)[0]!
+  const isAbsolute = u.startsWith('/')
+  const isRelative = u.startsWith('./') || u.startsWith('../') || /^[\w.\-]+$/.test(path)
+  if (!isAbsolute && !isRelative) return null
+  if (!IMG_EXT_RE.test(path)) return null
+  return u
+}
+
 function inline(text: string): string {
   let s = escapeHtml(text)
   // 行内代码
   s = s.replace(/`([^`]+)`/g, (_m, code) => `<code>${code}</code>`)
   // 加粗
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  // 安全图片 ![alt](url)：必须先于链接规则，否则会被链接规则吃成文字链接
+  s = s.replace(/!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/g, (_m, alt, url) => {
+    const src = safeImageSrc(url)
+    if (!src) return alt // 不安全 URL 降级为已转义的 alt 文本，绝不输出不可信 src
+    return `<img class="md-img" loading="lazy" alt="${alt}" src="${src}">`
+  })
   // 链接 [text](url)
   s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label, url) => {
     // 页内锚点：不加 target=_blank，交由点击处理器滚动，避免在 hash 路由下跳走

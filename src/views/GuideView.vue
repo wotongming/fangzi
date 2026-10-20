@@ -48,4 +48,12 @@ const html = computed(() => (tool.value?.guide ? renderMarkdown(tool.value.guide
   gap: 16px;
   justify-items: center;
 }
+/* Markdown 内嵌长图：铺满容器宽、按比例缩放，手机端不产生横向滚动 */
+:deep(.markdown-body img.md-img) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 12px auto;
+  border-radius: 12px;
+}
 </style>
