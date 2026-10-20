@@ -30,7 +30,8 @@ export const SAMPLE_QUERIES: SampleQuery[] = [
   { text: '在家练深蹲俯卧撑，想用摄像头自动计数并纠正不标准动作', expectToolId: 'pose-fitness-coach' },
   { text: '投简历前对照 JD 算个匹配分，看看还缺哪些技能', expectToolId: 'resume-jd-matcher' },
   { text: '午休摸鱼想玩局几分钟的 2048 翻牌小游戏打发时间', expectToolId: 'mini-games' },
-  { text: '在职考证，纸质讲义里的错题想按艾宾浩斯自动安排每天复习', expectToolId: 'exam-review-scheduler' }
+  { text: '在职考证，纸质讲义里的错题想按艾宾浩斯自动安排每天复习', expectToolId: 'exam-review-scheduler' },
+  { text: '家电发票保修卡随手塞找不到，想拍照归档、保修到期提醒，搬家还能扫码查物品在几号箱', expectToolId: 'home-vault' }
 ]
 
 /** 随机抽取 n 条（使用 Fisher–Yates 部分洗牌，不修改原数组） */
