@@ -13,7 +13,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: false,
-      includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png'],
+      includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png', 'icons/favicon-32.png', 'icons/favicon-16.png'],
       manifest: {
         id: base,
         name: '方子 - 对症下药的工具箱',
@@ -32,8 +32,8 @@ export default defineConfig({
         icons: [
           { src: `${base}icons/icon-192.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: `${base}icons/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
-          // 同一 512 图标同时提供 maskable 用途，保证安卓启动器遮罩与安装校验都命中
-          { src: `${base}icons/icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+          // 独立 maskable 512：绿底满幅、核心居中于 80% 安全区，安卓启动器遮罩不切主体
+          { src: `${base}icons/icon-512-maskable.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       },
       workbox: {
