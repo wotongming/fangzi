@@ -472,3 +472,15 @@ fangzi/
 - **数据与合规**：独立 IndexedDB 库 `fangzi-exam-review` v1（projects/questions/reviews/mockExams，projectId/nextReview/questionId/ts 索引），写库前深度 `toRaw` 解代理（嵌套 pointPath 单独拍平）；日期用本地日历日 YYYY-MM-DD + 整数天差；照片 Canvas 重绘去 EXIF，.ics 手写，**零新增 npm 运行时依赖**、无后端、数据不上传，无 NC 授权资源。
 - **计费**：免费增值——1 个考试项目、50 道错题、今日队列、弱项热力图、模考曲线免费；专业版**买断 ¥8.90**，解锁多项目、不限题数、报考/保弃决策看板与全库导出导入。
 - **位置**：`src/tools/exam-review-scheduler/`，路由 `/#/t/exam-review-scheduler`；文档见该目录 `docs/`（guide/postmortem、五阶段文档在 `docs/stage/`、PC·平板·手机真实截图在 `docs/shots/`）。M 档：纯逻辑下沉 `lib/`（models/scheduler/queue/weakness/curve/decision/notify/store/photos/ocr），新增 `test/exam-review-scheduler.test.ts` 16 例（全量单测 362）；`npm run verify:tools` = 28；`scripts/e2e-exam-review-scheduler-20261020.mjs` 三视口（1280×860 / 834×1112 / 375×812）全流程 E2E 全绿（建项目→录 2 题含标签与照片→IDB 注入到期→队列出现→已忘重置 1 天/记得递进 60 天→弱项红块→2 次模考出曲线与目标虚线→免费第 2 项目/第 51 题被拦、买断解锁）、零横向溢出。EdgeOne 限额：dist 约 131 MiB / 144 文件 / 最大 22.9 MiB，本工具仅新增约 30 KB JS + 4 KB CSS、零大资产，均在 5 GiB / 20000 / 25 MiB 内。OCR（D15）未启用，ocr.ts 仅占位 `experimental`，拍照后手动录入，列后续项。
+
+## 创作归因台（creator-attribution · 2026-10-20）
+
+- **简介**：面向同时运营多平台的独立创作者的本地内容复盘与收益归因台。手动录入或 CSV 批量导入内容台账（账号/标题/主题标签/形式/发布时间/投入工时），一条内容可多次回收阅读量、涨粉、收益快照；按**主题 / 形式 / 平台 / 发布时段**四维 groupBy 聚合，手写内联 SVG 柱状图展示各类条数、总阅读、总收益、单位收益（元/条）与时薪 ROI（元/小时，工时 0 回退 null 除零安全）；商单台账自动给出近 30 天已结商单 min–max 报价区间；一键导出「收入构成/TOP3 内容/按 ROI Top2 主题的下月策略/商单汇总」Markdown 月报。**不接任何平台 API、不抓包、不内嵌平台网页，数据仅手动录入与 CSV 导入，全程本机 IndexedDB。**
+- **目标用户**：粉丝 5 千–50 万、同时运营 3–5 个平台的独立内容创作者；每周逐平台手抄阅读/收益凑 Excel 想省时间的人；想知道哪类主题/形式/平台/时段最赚钱的人；品牌来问价想参考自己历史成交价的人；不愿把创作数据传到第三方 SaaS 的人。
+- **使用场景**：每周把各平台发的内容逐条录台账；发布 7 天/30 天后补一次数据快照；切换四维看板看哪类最赚钱；记商单后看报价区间；月底导出 Markdown 月报指导下月选题；把历史表格 CSV 批量导入。
+- **解决痛点**：每周逐平台手抄阅读/收益凑表花 1–3 小时还易错；数据散在各后台看不出哪类内容赚钱；不知道下周该押哪个主题/平台/时段；商单报价全凭感觉没有历史成交参考；企业级矩阵工具年费数千对小创作者太重；创作数据隐私不愿上云。
+- **合规边界**：数据仅来自用户手动录入或用户自行准备的 CSV，**不接任何平台开放 API、不抓包、不内嵌任何平台网页**；「下月策略」为基于本机历史数据的保守参考，不构成收益承诺。
+- **关键词**：内容复盘、多平台数据、收益归因、自媒体、创作者、商单报价、ROI、公众号、抖音、小红书、B站、内容台账、阅读量统计、分成收益、选题策略、创作复盘、数据回收、工时统计。
+- **数据与合规**：独立 IndexedDB 库 `fangzi-creator-attribution` v1（accounts/contents/metrics/deals，accountId/publishedAt/contentId/capturedAt/date 索引），写库前 `JSON.parse(JSON.stringify())` 深拍平解 Vue 代理规避 structuredClone DataCloneError；金额一律整数分；CSV 复用 `reusable-module/bill-csv`（UTF-8/GBK 解码、列名模糊定位、元→分、多格式日期），**零新增 npm 依赖**、无后端、数据不上传，无 NC 授权资源。
+- **计费**：免费增值——3 个账号 / 30 条内容台账与手动数据回收免费；专业版**买断 ¥19.90**，解锁不限账号内容条数、CSV 批量导入、四维归因看板、商单台账与报价区间、月度经营报告导出。
+- **位置**：`src/tools/creator-attribution/`，路由 `/#/t/creator-attribution`；文档见该目录 `docs/`（guide/postmortem、五阶段文档在 `docs/stage/`、PC·平板·手机真实截图在 `docs/shots/`）。M 档：纯逻辑下沉 `lib/`（types/store/csv/attribution/report/export），新增 `test/creator-attribution.test.ts` 17 例（全量单测 383）；`npm run verify:tools` = 29；`scripts/e2e-creator-attribution-20261020.mjs` 三视口（1280×860 / 834×1112 / 375×812）全流程 E2E 全绿（建账号→录 2 条内容→每条 2 次快照→四维看板 SVG+表→商单报价区间→月报预览→CSV UTF-8 导入预览 2 条/跳过 1→刷新数据仍在→免费第 4 账号升级墙）、零横向溢出。EdgeOne 限额：dist 约 132 MiB / 147 文件 / 最大 23 MiB，本工具零大资产，均在 5 GiB / 20000 / 25 MiB 内。
