@@ -18,7 +18,11 @@ import {
   createOverline,
   updateOverline,
   clampAim,
-  recordBest
+  planAimRange,
+  rectsOverlap,
+  AIM_HUD_GAP,
+  recordBest,
+  type Rect2
 } from '../src/tools/mini-games/gpu-games/merge-planet/game/logic.ts'
 
 test('进化链：11 级，半径与基础分严格递增，终极为黑洞', () => {
@@ -130,6 +134,73 @@ test('瞄准夹取：越界收敛、NaN 归中、min>max 归中', () => {
   assert.equal(clampAim(200, 40, 360), 200)
   assert.equal(clampAim(NaN, 40, 360), 200)
   assert.equal(clampAim(10, 300, 100), 200)
+})
+
+test('避让区间：无 HUD 时退回纯墙内区间', () => {
+  const p = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76 })
+  assert.equal(p.min, 26 + 30)
+  assert.equal(p.max, 375 - 26 - 30)
+})
+
+test('避让区间：右侧胶囊把右界内缩，球贴 max 右缘不相交', () => {
+  const reach = 16 + 14
+  const capsule: Rect2 = { x: 300, y: 8, w: 62, h: 34 }
+  const p = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [capsule] })
+  // max = capsule.x - reach - GAP
+  assert.equal(p.max, 300 - reach - AIM_HUD_GAP)
+  // 球包围盒（含发光）贴 max 时与胶囊无交集
+  const ball: Rect2 = { x: p.max - reach, y: 0, w: reach * 2, h: 76 }
+  assert.equal(rectsOverlap(ball, capsule), false)
+  // 左界不受右侧胶囊影响，仍是墙内左界
+  assert.equal(p.min, 26 + reach)
+})
+
+test('避让区间：左侧分数 HUD 把左界内缩，球贴 min 左缘不相交', () => {
+  const reach = 16 + 14
+  const scoreHud: Rect2 = { x: 0, y: 10, w: 46, h: 38 }
+  const p = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [scoreHud] })
+  assert.equal(p.min, scoreHud.x + scoreHud.w + reach + AIM_HUD_GAP)
+  const ball: Rect2 = { x: p.min - reach, y: 0, w: reach * 2, h: 76 }
+  assert.equal(rectsOverlap(ball, scoreHud), false)
+})
+
+test('避让区间：胶囊随长文案变宽自动进一步内缩（依据实际包围盒，非写死常数）', () => {
+  const reach = 16 + 14
+  const shortCap: Rect2 = { x: 313, y: 8, w: 49, h: 34 } // 短名
+  const longCap: Rect2 = { x: 286, y: 8, w: 76, h: 34 } // 长星球名更宽
+  const a = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [shortCap] })
+  const b = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [longCap] })
+  assert.ok(b.max < a.max, '更宽胶囊应把右界压得更左')
+  // 两档右界均对应各自胶囊左缘
+  assert.equal(a.max, shortCap.x - reach - AIM_HUD_GAP)
+  assert.equal(b.max, longCap.x - reach - AIM_HUD_GAP)
+})
+
+test('避让区间：HUD 在滑轨带垂直之外时不做水平避让', () => {
+  const farHud: Rect2 = { x: 300, y: 400, w: 60, h: 34 }
+  const p = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [farHud] })
+  assert.equal(p.max, 375 - 26 - 30)
+})
+
+test('避让区间：左右 HUD 同时避让后仍保留可投区间（min<max）', () => {
+  const reach = 16 + 14
+  const left: Rect2 = { x: 0, y: 10, w: 46, h: 38 }
+  const right: Rect2 = { x: 300, y: 8, w: 62, h: 34 }
+  const p = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [left, right] })
+  assert.ok(p.min < p.max)
+  for (const c of [p.min, (p.min + p.max) / 2, p.max]) {
+    const ball: Rect2 = { x: c - reach, y: 0, w: reach * 2, h: 76 }
+    assert.equal(rectsOverlap(ball, left), false)
+    assert.equal(rectsOverlap(ball, right), false)
+  }
+})
+
+test('避让区间：窄屏+超宽 HUD 压没时回退居中，保证至少一个可投点', () => {
+  const huge: Rect2 = { x: 0, y: 8, w: 375, h: 34 }
+  const p = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [huge] })
+  assert.equal(p.min, p.max)
+  assert.ok(Number.isFinite(p.min))
+  assert.equal(p.min, 375 / 2)
 })
 
 test('最高分：刷新/保留/平局非新纪录，非法输入兜底 0', () => {

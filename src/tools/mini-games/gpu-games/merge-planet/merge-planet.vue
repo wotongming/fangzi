@@ -23,7 +23,9 @@ import {
   createOverline,
   updateOverline,
   clampAim,
-  type OverlineState
+  planAimRange,
+  type OverlineState,
+  type Rect2
 } from './game/logic'
 import { makeStarfield, drawSpaceBackground, paintPlanet, hash01, type Star } from './game/render'
 
@@ -54,6 +56,8 @@ const FRICTION_AIR = 0.016
 /** 合并允许的最大相对速度（px/帧），高速撞击不合并避免误触发 */
 const MERGE_MAX_SPEED = 5
 const WALL = 26
+/** 待投球发光外扩 margin（box-shadow 辉光），顶部避让时计入球包围盒。 */
+const AIM_GLOW = 14
 
 interface Planet {
   body: Matter.Body
@@ -270,10 +274,47 @@ function onLose(): void {
   emit('gameover')
 }
 
-// —— 投放 ——
+// —— 投放：瞄准区间由实测 HUD 包围盒避让（纯函数 planAimRange 求区间）——
+function localRect(el: Element): Rect2 | null {
+  const root = rootEl.value
+  if (!root) return null
+  const rr = root.getBoundingClientRect()
+  const b = el.getBoundingClientRect()
+  return { x: b.left - rr.left, y: b.top - rr.top, w: b.width, h: b.height }
+}
+
+/** 顶部需避让的 HUD：本组件「下一个」胶囊 + 宿主左上分数 + 右上控制钮（实测局部包围盒）。 */
+function avoidRects(): Rect2[] {
+  const out: Rect2[] = []
+  const root = rootEl.value
+  if (!root) return out
+  for (const el of root.querySelectorAll('.mp-next')) {
+    const r = localRect(el)
+    if (r) out.push(r)
+  }
+  for (const sel of ['.hud-left', '.hud-btn']) {
+    const el = document.querySelector(sel)
+    if (el) {
+      const r = localRect(el)
+      if (r) out.push(r)
+    }
+  }
+  return out
+}
+
 function settleRange(): { min: number; max: number } {
   const r = radiusFor(currentTier)
-  return { min: WALL + r, max: W - WALL - r }
+  const railEl = rootEl.value?.querySelector('.mp-rail')
+  const rail = railEl ? localRect(railEl) : null
+  return planAimRange({
+    width: W,
+    radius: r,
+    glow: AIM_GLOW,
+    wallPad: WALL,
+    bandY: rail?.y ?? 0,
+    bandH: rail?.h ?? railH,
+    avoid: avoidRects()
+  })
 }
 
 function tryDrop(): void {

@@ -152,6 +152,80 @@ export function clampAim(x: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, x))
 }
 
+/** 局部坐标矩形（x/y 左上角，w/h 宽高），用于顶部 HUD 避让。 */
+export interface Rect2 {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** 两矩形是否相交（pad 为额外外扩间距，用于保守判空）。 */
+export function rectsOverlap(a: Rect2, b: Rect2, pad = 0): boolean {
+  return (
+    a.x <= b.x + b.w + pad &&
+    b.x <= a.x + a.w + pad &&
+    a.y <= b.y + b.h + pad &&
+    b.y <= a.y + a.h + pad
+  )
+}
+
+/** 待投球与避让 HUD 之间的水平呼吸间距（px），避免发光边缘贴住文字。 */
+export const AIM_HUD_GAP = 10
+
+export interface AimRange {
+  min: number
+  max: number
+}
+
+/**
+ * 计算待投球瞄准中心 X 的允许区间（纯函数，组件实测 HUD 包围盒后传入）。
+ *
+ * - 球完整包围盒 = 半径 + 发光外扩 reach，在顶部滑轨带内水平移动；
+ * - 仅当 HUD 与滑轨带在垂直方向也相交时才做水平避让，HUD 按中心落在左/右半屏归为左/右边界；
+ * - 依据 HUD **实际包围盒**避让（胶囊随长星球名变宽会自动内缩），不写死小常数；
+ * - 避让后若区间被压没（min>max，窄屏/HUD 过宽），回退为墙内居中可投，保证至少一个可投点，
+ *   且不把左右可投范围过度压缩。
+ */
+export function planAimRange(opts: {
+  width: number
+  radius: number
+  glow: number
+  wallPad: number
+  bandY: number
+  bandH: number
+  avoid?: Rect2[]
+}): AimRange {
+  const reach = Math.max(0, opts.radius) + Math.max(0, opts.glow)
+  const band: Rect2 = { x: 0, y: opts.bandY, w: opts.width, h: opts.bandH }
+  let min = opts.wallPad + reach
+  let max = opts.width - opts.wallPad - reach
+  // 画布过窄导致墙内区间非法：直接居中兜底
+  if (min > max) {
+    const c = opts.width / 2
+    return { min: c, max: c }
+  }
+  for (const hud of opts.avoid ?? []) {
+    if (!rectsOverlap(band, hud, AIM_HUD_GAP)) continue
+    const center = hud.x + hud.w / 2
+    if (center >= opts.width / 2) {
+      // 右侧 HUD（如「下一个」胶囊）：球右缘 ≤ HUD 左缘 - gap
+      const limit = hud.x - reach - AIM_HUD_GAP
+      if (limit < max) max = limit
+    } else {
+      // 左侧 HUD（如左上分数）：球左缘 ≥ HUD 右缘 + gap
+      const limit = hud.x + hud.w + reach + AIM_HUD_GAP
+      if (limit > min) min = limit
+    }
+  }
+  // 避让后区间被压没：不压没可投范围，回退墙内居中
+  if (min > max) {
+    const c = (opts.wallPad + reach + opts.width - opts.wallPad - reach) / 2
+    return { min: c, max: c }
+  }
+  return { min, max }
+}
+
 /** 最高分纯函数：返回新最高分与是否刷新纪录（持久化由宿主 storage 负责）。 */
 export function recordBest(prev: number, score: number): { best: number; isNewBest: boolean } {
   const p = Number.isFinite(prev) && prev >= 0 ? Math.floor(prev) : 0

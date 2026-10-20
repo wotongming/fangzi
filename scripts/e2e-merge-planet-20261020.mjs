@@ -103,12 +103,63 @@ async function decorateBoard(page) {
   await page.waitForTimeout(300)
 }
 
+/**
+ * 顶部滑轨避让断言：把待投球移到 最左/居中/最右 三档，
+ * 逐档断言待投球包围盒与右上「下一个」胶囊、左上分数 HUD 矩形交集为空；
+ * 并保证左右可投列未被过度压缩（仍有可观横向范围）。
+ */
+async function assertAimClearsHud(page, label) {
+  let leftCenter = 0
+  let rightCenter = 0
+  for (const [name, x] of [['left', -100], ['center', null], ['right', 9999]]) {
+    await page.evaluate((xv) => {
+      const api = window.__mergePlanet
+      if (xv === null) api.aim(window.innerWidth / 2)
+      else api.aim(xv)
+    }, x)
+    await page.waitForTimeout(90)
+    const r = await page.evaluate(() => {
+      const ov = (a, b) =>
+        !!a && !!b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+      const a = document.querySelector('.mp-aim')?.getBoundingClientRect()
+      const next = document.querySelector('.mp-next')?.getBoundingClientRect()
+      const left = document.querySelector('.hud-left')?.getBoundingClientRect()
+      return {
+        aim: a,
+        center: a ? (a.left + a.right) / 2 : 0,
+        hitNext: ov(a, next),
+        hitLeft: ov(a, left)
+      }
+    })
+    log(`[${label}:${name}] aim center=${Math.round(r.center)} hitNext=${r.hitNext} hitLeft=${r.hitLeft}`)
+    if (r.hitNext) fail.push(`${label}-${name} 待投球与右上「下一个」胶囊重叠`)
+    if (r.hitLeft) fail.push(`${label}-${name} 待投球与左上分数 HUD 重叠`)
+    if (name === 'left') leftCenter = r.center
+    if (name === 'right') rightCenter = r.center
+  }
+  // 左右可投列仍是两个不同落点（中心点拉开 >60px），未被压没成单点；右侧胶囊本就占用右区
+  const span = rightCenter - leftCenter
+  log(`[${label}] 左右落点中心跨度 ≈ ${Math.round(span)}px`)
+  if (!(span > 60)) fail.push(`${label} 左右可投列被过度压缩（中心跨度 ${Math.round(span)}px）`)
+}
+
+/** 把待投球拨到最右档并等待稳定（用于最右不压胶囊截图）。 */
+async function aimRightmost(page) {
+  await page.evaluate(() => window.__mergePlanet.aim(9999))
+  await page.waitForTimeout(120)
+}
+
 // —— PC：选卡 / 投放 / 合成升级 / 连锁 / 越线判负 / 重开 ——
 async function runPC(page) {
   await gotoPicker(page)
   await shot(page, 'mp-pc-picker.png')
   await enterGame(page)
   await overflow(page, 'pc-picker')
+
+  // 顶部滑轨左/中/右三档避让 HUD（PC 1280×860）
+  await assertAimClearsHud(page, 'pc')
+  await aimRightmost(page)
+  await shot(page, 'mp-pc-occlusion.png')
 
   // 真实投放若干次（输入链路），不强制立即得分
   for (const x of [0.35, 0.55, 0.45]) await realDrop(page, x)
@@ -163,6 +214,9 @@ async function runMobile(page) {
   await shot(page, 'mp-mobile-picker.png')
   await enterGame(page)
 
+  // 顶部滑轨左/中/右三档避让 HUD（手机 375×812）
+  await assertAimClearsHud(page, 'mobile')
+
   // 顶部滑轨拖动瞄准（手指在顶部窄横条）
   const box = await page.locator('.mp').boundingBox()
   await page.mouse.move(box.x + 160, box.y + 36)
@@ -194,6 +248,8 @@ async function runMobile(page) {
   if (aim2 && aim2.bottom >= touchY) fail.push('下半屏拖动时待投球压到触点 y 之下（遮挡落点）')
   if (guide2 && guide2.top >= touchY) fail.push('引导线未位于触点 y 之上')
   await shot(page, 'mp-mobile-drop.png')
+  // 最右档：待投球内缩到「下一个」胶囊左侧，不压胶囊（用于几何复核截图）
+  await aimRightmost(page)
   await shot(page, 'mp-mobile-occlusion.png')
   await overflow(page, 'mobile-play')
 }
