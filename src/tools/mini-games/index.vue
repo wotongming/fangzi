@@ -86,6 +86,20 @@ const NEON: GameDef[] = [
   }
 ]
 
+/** 物理合成区（matter.js 本地物理引擎，免费、离线可玩）。 */
+const ORBIT: GameDef[] = [
+  {
+    id: 'merge-planet',
+    name: '合成大星球',
+    icon: '🪐',
+    desc: '顶部滑轨瞄准投放，同级星球相撞合成进化，一路升到终极黑洞',
+    pro: false,
+    difficulties: ['classic'],
+    kind: 'gpu',
+    loader: () => import('./gpu-games/merge-planet/merge-planet.vue')
+  }
+]
+
 const DIFF_LABEL: Record<Diff, string> = { easy: '简单', normal: '普通', hard: '困难', classic: '经典' }
 
 const billing = useToolBilling(manifest.id)
@@ -279,12 +293,32 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
+      <section class="zone">
+        <h2 class="zone-title"><span class="neon-txt">星球进化</span> · 物理合成</h2>
+        <div class="grid">
+          <button v-for="g in ORBIT" :key="g.id" class="gcard" @click="play(g)">
+            <span class="gc-top">
+              <span class="gc-ico">{{ g.icon }}</span>
+              <span v-if="!g.pro" class="tag-pill free">免费</span>
+              <span v-else-if="!unlocked(g)" class="tag-pill pro">🔒 专业版</span>
+              <span v-else class="tag-pill owned">✓ 已解锁</span>
+            </span>
+            <span class="gc-name">{{ g.name }}</span>
+            <span class="gc-desc">{{ g.desc }}</span>
+            <span class="gc-meta">
+              <em v-if="bestOf(g)">最高 {{ bestOf(g) }}</em>
+              <span v-else class="faint">即点即玩 · 全屏沉浸</span>
+            </span>
+          </button>
+        </div>
+      </section>
+
       <!-- 专业版付费墙（在选游戏页内） -->
       <div v-if="paywallFor" class="card paywall">
         <div class="pw-icon">{{ paywallFor.icon }}</div>
         <h3>「{{ paywallFor.name }}」是专业版游戏</h3>
         <p class="faint">
-          免费版可畅玩 2048、记忆翻牌、炫光连消。升级专业版一次买断，解锁数字华容道以及霓虹脉冲、
+          免费版可畅玩 2048、记忆翻牌、炫光连消、合成大星球。升级专业版一次买断，解锁数字华容道以及霓虹脉冲、
           星轨穿梭等更多 GPU 炫光游戏，后续持续加入，无广告。
         </p>
         <button class="btn btn-primary big" :disabled="buying" @click="upgrade">

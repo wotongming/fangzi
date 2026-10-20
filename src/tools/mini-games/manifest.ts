@@ -4,7 +4,7 @@ export const manifest: ToolManifest = {
   id: 'mini-games',
   name: '小游戏合集',
   tagline:
-    '通勤排队午休摸鱼，打开即玩：经典益智（2048、翻牌、华容道）与 GPU 加速的炫光游戏（莫比环跑酷、炫光连消、霓虹脉冲、星轨穿梭）。莫比环跑酷是 Three.js 3D 莫比乌斯光带跑酷，选一个卡通小人一指翻转、全屏冲刺；粒子辉光、震屏与合成音效带来沉浸式体验；全部纯前端离线运行、无广告不打扰，设备不支持高端渲染时自动流畅降级，最高分保存在本机。',
+    '通勤排队午休摸鱼，打开即玩：经典益智（2048、翻牌、华容道）、GPU 加速的炫光游戏（莫比环跑酷、炫光连消、霓虹脉冲、星轨穿梭）与 matter.js 真实物理合成的「合成大星球」——顶部滑轨瞄准投放，同级星球相撞一路合成进化到终极黑洞。粒子辉光、震屏与合成音效带来沉浸式体验；全部纯前端离线运行、无广告不打扰，设备不支持高端渲染时自动流畅降级，最高分保存在本机。',
   category: 'life',
   type: 'web',
   targetUsers: [
@@ -33,21 +33,22 @@ export const manifest: ToolManifest = {
     '炫光', '霓虹', '全屏游戏', '沉浸', '炫酷游戏', '粒子特效', '连消', '反应力',
     '节奏游戏', '音游', '下落音符', '闪避', '躲避障碍', '跑酷', '生存游戏',
     '3d跑酷', '莫比乌斯', '莫比环', '莫比环跑酷', '无尽跑酷', '一指翻转', 'three.js', '卡通跑酷', '3d游戏',
-    'webgl游戏', 'gpu游戏', '网页gpu', 'html5游戏', '角色', '可选角色'
+    'webgl游戏', 'gpu游戏', '网页gpu', 'html5游戏', '角色', '可选角色',
+    '合成大西瓜', '合成游戏', '物理合成', '合并游戏', '星球', '星球合成', '进化', '黑洞', 'matter.js', '物理解谜'
   ],
   billing: {
     mode: 'freemium',
     currency: 'CNY',
     priceCents: 1990,
     features: [
-      { key: 'free-games', label: '免费畅玩：2048、记忆翻牌、炫光连消、莫比环跑酷（霓虹 GPU 系列引流款）', free: true },
+      { key: 'free-games', label: '免费畅玩：2048、记忆翻牌、炫光连消、莫比环跑酷、合成大星球（霓虹 GPU 系列引流款 + matter.js 物理合成）', free: true },
       { key: 'pro-library', label: '专业版：解锁数字华容道等完整经典游戏库', free: false },
       { key: 'neon-library', label: '专业版：解锁霓虹脉冲（节奏）、星轨穿梭（闪避）等 GPU 炫光游戏，并在莫比环跑酷中获得光盾续命与专属卡通角色、进阶特效（持续更新）', free: false }
     ]
   },
   createdAt: '2026-10-17',
-  updatedAt: '2026-10-19',
-  version: '1.4.0',
+  updatedAt: '2026-10-20',
+  version: '1.5.0',
   status: 'beta',
   immersive: true,
   author: 'fangzi'

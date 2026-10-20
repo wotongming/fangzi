@@ -98,6 +98,15 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: false,
-    chunkSizeWarningLimit: 900
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        // matter.js 物理引擎独立本地 chunk（打进包内、被 PWA 预缓存，断网可玩；零 CDN 运行时）
+        manualChunks(id: string) {
+          if (id.includes('matter-js')) return 'matter-physics'
+          return undefined
+        }
+      }
+    }
   }
 })
