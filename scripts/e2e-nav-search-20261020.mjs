@@ -80,13 +80,27 @@ for (const [label, vp] of [
   if (await page.locator('.block').last().locator('h2', { hasText: '最新工具' }).count() !== 0) {
     fails.push(`${label} 首页仍有「最新工具」推荐块`)
   }
-  // 收藏胶囊存在、数量正确
-  const favCount = await page.locator('.fav-chip').count()
-  if (favCount !== FAV.length) fails.push(`${label} 收藏胶囊 ${favCount} != ${FAV.length}`)
+  // 收藏为小卡网格：新选择器存在、旧胶囊不存在、数量正确
+  const cardCount = await page.locator('.fav-card').count()
+  if (cardCount !== FAV.length) fails.push(`${label} 收藏小卡 ${cardCount} != ${FAV.length}`)
+  if (await page.locator('.fav-chip').count() !== 0) fails.push(`${label} 旧胶囊 .fav-chip 仍存在`)
 
   const d = await overflow(page)
-  console.log(`overflow[${label}]=${d} favChips=${favCount} svg=${svgCount}`)
+  console.log(`overflow[${label}]=${d} favCards=${cardCount} svg=${svgCount}`)
   if (d > 2) fails.push(`${label} 横向溢出 ${d}px`)
+
+  // 点卡进工具页；点 × 即时移除（仅移动端做一次完整交互）
+  if (label === 'mobile') {
+    await page.locator('.fav-card', { hasText: '小游戏合集' }).first().click()
+    await page.waitForTimeout(500)
+    if (!page.url().includes('/t/mini-games')) fails.push(`${label} 收藏小卡点击未进入工具页`)
+    await page.goBack().catch(() => {})
+    await page.waitForTimeout(300)
+    await page.locator('.fav-card .fc-x').first().click()
+    await page.waitForTimeout(200)
+    const after = await page.locator('.fav-card').count()
+    if (after !== FAV.length - 1) fails.push(`${label} ×移除后卡片数 ${after} != ${FAV.length - 1}`)
+  }
 
   if (label === 'pc') await shot(page, 'nav-home-pc.png')
   if (label === 'mobile') await shot(page, 'nav-home-mobile.png')

@@ -27,6 +27,20 @@ function removeFav(id: string) {
   refreshFavorites()
 }
 
+// 工具无内置图标/品牌色，按 id 稳定取一组柔和底色（米白+品牌绿为主），首字作字标
+const ICON_PALETTE = [
+  { bg: '#e6efe9', fg: '#3f7d5e' },
+  { bg: '#e7efee', fg: '#3d7a72' },
+  { bg: '#f3ecd9', fg: '#8a6d2f' },
+  { bg: '#f0e7e1', fg: '#8a5f4c' }
+]
+function iconStyle(id: string) {
+  let h = 0
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  const p = ICON_PALETTE[h % ICON_PALETTE.length] ?? ICON_PALETTE[0]!
+  return { background: p.bg, color: p.fg }
+}
+
 // —— 紧凑搜索入口（PC 点击；移动端配合下拉手势唤起 /search）——
 const PULL_HINT_KEY = 'fz-pull-hint-seen'
 const showPullHint = ref(localStorage.getItem(PULL_HINT_KEY) !== '1')
@@ -127,16 +141,30 @@ onMounted(() => {
       <span class="pull-dot">⌄</span>{{ pullText }}
     </div>
 
-    <!-- 收藏列表（紧凑胶囊，直达工具、可移除） -->
+    <!-- 收藏小卡网格：整卡进工具页，右上角 × 移除 -->
     <section v-if="favoriteTools.length" class="block fav-block">
       <div class="block-head">
-        <h2>我收藏的工具</h2>
+        <h2>我收藏的方子</h2>
       </div>
-      <div class="fav-links">
-        <span v-for="t in favoriteTools" :key="t.manifest.id" class="fav-chip">
-          <RouterLink class="fav-link" :to="`/t/${t.manifest.id}`">{{ t.manifest.name }}</RouterLink>
-          <button class="fav-x" type="button" title="从我的方子移除" @click="removeFav(t.manifest.id)">×</button>
-        </span>
+      <div class="fav-grid">
+        <RouterLink
+          v-for="t in favoriteTools"
+          :key="t.manifest.id"
+          class="fav-card"
+          :to="`/t/${t.manifest.id}`"
+        >
+          <div class="fc-top">
+            <span class="fc-ico" :style="iconStyle(t.manifest.id)">{{ t.manifest.name.slice(0, 1) }}</span>
+            <button
+              class="fc-x"
+              type="button"
+              title="从我的方子移除"
+              @click.prevent.stop="removeFav(t.manifest.id)"
+            >×</button>
+          </div>
+          <span class="fc-name">{{ t.manifest.name }}</span>
+          <span class="fc-tag">{{ t.manifest.tagline }}</span>
+        </RouterLink>
       </div>
     </section>
 
@@ -225,45 +253,77 @@ onMounted(() => {
   font-size: 17px;
   margin: 0;
 }
-.fav-links {
+.fav-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+@media (min-width: 640px) {
+  .fav-grid {
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  }
+}
+.fav-card {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
-}
-.fav-chip {
-  display: inline-flex;
-  align-items: stretch;
-  border: 1px solid var(--line);
-  border-radius: 999px;
+  padding: 14px;
+  min-height: 118px;
   background: var(--surface);
-  overflow: hidden;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  text-decoration: none !important;
+  color: inherit;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
 }
-.fav-chip:hover {
+.fav-card:hover {
+  transform: translateY(-2px);
   border-color: var(--brand);
   box-shadow: var(--shadow-sm);
 }
-.fav-link {
-  padding: 7px 6px 7px 14px;
-  font-size: 13.5px;
-  color: var(--ink);
-  text-decoration: none !important;
-  white-space: nowrap;
+.fc-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
 }
-.fav-chip:hover .fav-link {
-  color: var(--brand-dark);
+.fc-ico {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 700;
+  flex: none;
 }
-.fav-x {
+.fc-x {
   border: none;
   background: transparent;
   color: var(--ink-faint);
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1;
-  padding: 0 11px;
+  padding: 2px 6px;
   cursor: pointer;
+  opacity: 0.7;
 }
-.fav-x:hover {
+.fc-x:hover {
   color: #c0473c;
+  opacity: 1;
+}
+.fc-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.3;
+}
+.fc-tag {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .empty-state {
   max-width: 560px;
