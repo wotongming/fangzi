@@ -104,7 +104,21 @@
 - 手指可在顶部横条或屏幕任意处水平拖动改瞄准 X，但**预览/引导线永远停在顶部安全区**，落点列在触点 y 之上可见，手指不压堆叠区、不遮落点。
 - PC：鼠标横向移动瞄准、点击/空格投放，键盘左右方向键微调。
 
-**HUD 避让（2026-10-20 补修）**：初版待投球移到最右会压住右上「下一个」胶囊左缘。改为纯函数 `planAimRange`（logic.ts）——组件实测 `.mp-next` 胶囊 / 宿主 `.hud-left` 分数 / `.hud-btn` 的**局部包围盒**，按球半径+发光外扩 reach 求允许区间 `[min,max]` 并 clamp；胶囊随长星球名变宽会自动内缩（不写死常数），窄屏/HUD 压没时回退居中保证至少一个可投点，不把左右可投范围过度压缩。E2E 在 PC 1280×860 与手机 375×812 各跑左/中/右三档，断言球包围盒与两个 HUD 矩形交集为空。
+**HUD 避让（2026-10-20 补修，已被第三轮取代）**：初版待投球移到最右会压住右上「下一个」胶囊左缘，曾用纯函数 `planAimRange` 实测 HUD 包围盒内缩右界。第三轮用户要求删除预告胶囊、恢复全宽，该避让函数已随胶囊一并删除。
+
+### 2026-10-20 第三轮迭代（删预告胶囊 / 重力感应 / 修斜碰首撞不合）
+
+**① 删除「下一个」预告胶囊 + 全宽贴边投放**：整块 `.mp-next` 胶囊（label「下一个」+ mini 球 + nextName）从模板/状态移除，投出后直接 `rollSpawnTier()` 生成当前球，不再维护 next 队列；旧 `planAimRange/Rect2/rectsOverlap/AIM_HUD_GAP` 及 7 例避让单测全部删除。瞄准纯函数改为 `wallAimRange(width,radius,edge)`：球心只受「半径+极小边距」约束，`[r+edge, width-r-edge]`，左右都能贴墙，**HUD 不缩减可投范围**。左上分数来自宿主 FocusStage `.hud-left`，最左贴边可能与其视觉重叠，改由 `styleHostHud()` 把它压成 22px 半透明圆角衬底胶囊并 `z-index:30` 浮于待投球上层保证可读，`restoreHostHud()` 卸载还原——而不是限制投放。
+
+**② 重力感应（gamma → world.gravity.x）**：
+- 纯函数 `gammaToGravityX(gamma,{deadzoneDeg=5,maxTilt=0.6,fullDeg=30})`：死区 ±5° 内归 0，30° 满偏线性映射到 ±0.6（×gravity.y），超幅 clamp，NaN 回退 0；`lerpGravityX(current,target,alpha=0.12)` 指数平滑禁止重力跳变。常量 `GRAVITY_DEADZONE_DEG=5 / GRAVITY_MAX_TILT=0.6 / GRAVITY_FULL_DEG=30 / GRAVITY_LERP_ALPHA=0.12`。
+- iOS 13+ `DeviceOrientationEvent.requestPermission()` 必须在用户手势内：非 iOS 直接挂 `deviceorientation`；iOS 先显示「重力感应」按钮，点击在手势内请求权限，granted 才启用，denied/不支持/非 HTTPS **静默回退垂直重力**，游戏全程可玩不卡；右上角开关可关。
+- PC 无传感器：瞄准仍由鼠标移动 / `←/→` 负责，倾斜用 `A/D`（或 `Q/E`），同样走死区→映射→clamp→lerp。
+- 摩擦调活以便横向重力下真的滚动、回正停住：`BALL_FRICTION=0.14`、`GROUND_FRICTION=0.22`、`FRICTION_AIR=0.035`（球体无滚动阻力，靠空气阻尼耗散惯性），`gravity.y=1` 不变，死亡线规则不动。
+
+**③ 修「同级斜向/切向首撞有时不合」（实锤根因）**：
+- 旧判定（已删除的 `scanMerges`）对每对同级球先算整体相对速度 `rvx=a.vel.x-b.vel.x; rvy=...`，再 `if (Math.hypot(rvx,rvy) > MERGE_MAX_SPEED=5) continue`——这个**整体相对速度标量门槛**把斜向/切向擦碰（切向速度大、法向接近小）挡在合并外；且只按距离 ≤(ra+rb)*1.06 轮询，首帧配对跳过或擦碰后保持贴合不再触发 `collisionStart`，表现为「第一次撞不合、弹开再撞才合」。
+- 修法：`contactsForMerge(a,b,now,graceMs)` 只看**同级 + 过保护期 `SPAWN_GRACE_MS=260ms` + 相切 1.08 倍**，**完全不看速度**，切向滑动绝不阻止合并；`planMerges(nodes,now,graceMs)` 做本帧去重（一个 body 只合一对、取先到）、新合成球延迟到循环结束再生成避免本帧二次合并（连锁靠后续自然碰撞）、不同级永不合、保护期新球不误合。组件收集 planMerges 结果后统一移除旧球/计分连击（×1.3、900ms 窗口不变）/粒子，循环后在接触点 spawn 高一级球并上弹。
 
 ### 版权合规
 
@@ -113,28 +127,31 @@
 
 ### 验证覆盖
 
-- 单测：`test/merge-planet.test.ts` **18 例**（进化链 11 级半径/分值递增、同级判定、升级链到黑洞、计分与连击、投放随机与冷却闸门、越顶持续计时/瞬时擦过清零、瞄准夹取、最高分纯函数，另含 7 例 HUD 避让区间：无 HUD/右胶囊/左分数/宽胶囊长文案/垂直远离/左右同避/压没回退居中）；全量 `npm test` **421/421 通过**（基线 403 + 本游戏 18）。
+- 单测：`test/merge-planet.test.ts` **21 例**（进化链 11 级半径/分值递增、同级判定、升级链到黑洞、计分与连击、投放随机与冷却闸门、越顶持续计时/瞬时擦过清零、全宽墙内区间 `wallAimRange`、最高分纯函数；重力 3 例：gamma→gravity.x 死区/满偏 clamp/NaN 回退、死区可注入、lerp 平滑收敛不跳变；合并 6 例：垂直正碰/斜向/切向高速擦碰/保持贴合四种同级首次即合、不同级不合+保护期不误合、一帧双同级只合法合一对）；全量 `npm test` **424/424 通过**。
 - 类型：`vue-tsc --noEmit` **0 错**；`npm run verify:tools` 工具数仍 **30**；`npm run build` 成功。
-- E2E `scripts/e2e-merge-planet-20261020.mjs`（preview，三视口 1280×860 / 834×1112 / 375×812）：真实投放 → 同级合成升级加分（20 → 连锁 59）→ 越线持续判负 → 重开归零 → 断网链路合成；手机顶部滑轨几何断言（待投球/引导线在顶部安全区、落点列在触点 y 之上）；PC 与手机各跑左/中/右三档，断言球包围盒与右上「下一个」胶囊、左上分数 HUD 矩形交集为空；零横向溢出、无 pageerror（SW abort 噪音按既有方式过滤）。
+- E2E `scripts/e2e-merge-planet-20261020.mjs`（preview，三视口 1280×860 / 834×1112 / 375×812）：断言 `.mp-next`/「下一个」DOM 不存在；PC 与手机各把待投球拨到最左/最右，断言球心可到墙内边界（left≤r+12、right 距右墙≤r+12）、不被 HUD 限制；倾斜滚动（PC 经测试钩子注入 gamma=28）落底球向低侧位移 >25px、`world.gravity.x` 回正归零、第二段 1.1s 位移 ≤8px 证明停住；斜向同级首次接触即合成加分（20 → 连锁 59）→ 越线持续判负 → 重开归零 → 断网链路合成；手机顶部滑轨几何断言（待投球/引导线在顶部安全区、落点列在触点 y 之上）；零横向溢出、无 pageerror（SW abort 噪音按既有方式过滤）。
 
 ### 截图清单（真实构建实拍，非占位/网图）
 
 | 截图文件 | 像素 | 大小 | 内容 | 结论 |
 | --- | --- | --- | --- | --- |
 | mp-pc-picker.png | 1280×860 | 95,043 B | 选卡页「星球进化·物理合成」分区 + 合成大星球免费卡 | 通过 |
-| mp-pc-drop.png | 1280×860 | 336,143 B | 开局投放：顶部滑轨待投球 + 引导线 + 星空 | 通过 |
-| mp-pc-merge.png | 1280×860 | 384,770 B | 合成爆发：海王星/天王星环/土星环/太阳辉光一排 + 粒子 | 通过 |
-| mp-pc-occlusion.png | 1280×860 | 334,283 B | PC 最右档：待投球内缩到「下一个」胶囊左侧，不压胶囊 | 通过 |
-| mp-pc-result.png | 1280×860 | 160,729 B | 越线判负结算卡片（分数 59 + 再来一局） | 通过 |
-| mp-tablet-drop.png | 834×1112 | 217,309 B | 平板投放：滑轨/引导线/待投球 | 通过 |
+| mp-pc-left.png | 1280×860 | 326,604 B | PC 最左贴边：球到左墙，分数衬底浮于上层仍可读 | 通过 |
+| mp-pc-right.png | 1280×860 | 326,673 B | PC 最右贴边：球到右墙，无预告胶囊 | 通过 |
+| mp-pc-tilt.png | 1280×860 | 335,154 B | 右倾中：落底地球已向低侧(右)滚动（x0=320→x1=513） | 通过 |
+| mp-pc-drop.png | 1280×860 | 330,456 B | 开局投放：顶部滑轨待投球 + 引导线 + 星空 | 通过 |
+| mp-pc-merge.png | 1280×860 | 386,082 B | 合成爆发：月球/地球/天王星/土星环/太阳辉光一排 + 粒子 | 通过 |
+| mp-pc-result.png | 1280×860 | 159,706 B | 越线判负结算卡片（分数 59 + 再来一局） | 通过 |
+| mp-tablet-drop.png | 834×1112 | 213,108 B | 平板投放：滑轨/引导线/待投球 | 通过 |
 | mp-mobile-picker.png | 375×812 | 78,518 B | 手机选卡 | 通过 |
-| mp-mobile-drop.png | 375×812 | 87,437 B | 手机投放：预览在顶部、不压堆叠区 | 通过 |
-| mp-mobile-occlusion.png | 375×812 | 87,646 B | 手机最右档：待投球避让「下一个」胶囊，几何复核 | 通过 |
+| mp-mobile-left.png | 375×812 | 83,350 B | 手机最左贴边：球到左墙、分数可读 | 通过 |
+| mp-mobile-right.png | 375×812 | 83,437 B | 手机最右贴边：球到右墙、无预告胶囊 | 通过 |
+| mp-mobile-drop.png | 375×812 | 84,749 B | 手机投放：预览在顶部、不压堆叠区 | 通过 |
 
 ### EdgeOne 限额与 matter chunk
 
-- matter-physics 独立本地 chunk：`assets/matter-physics-*.js` **83.74 KB / gzip 26.21 KB**（build 报告；实测 gzip 25.29 KB），已进 SW 预缓存；merge-planet chunk（18.73 KB / gzip 7.34 KB）懒加载后同样预缓存。
-- EdgeOne 限额（本次构建）：dist 总量 **130.91 MiB**（限 5 GiB）、文件数 **154**（限 20000）、最大单文件 22.90 MiB（既有 onnx，限 25 MiB），全部通过。
+- matter-physics 独立本地 chunk：`assets/matter-physics-*.js` **83.74 KB / gzip 26.21 KB**（0.20.0，MIT，精确锁版；@types/matter-js 0.20.2 MIT），已进 SW 预缓存；merge-planet chunk（20.22 KB / gzip 7.85 KB）懒加载后同样预缓存，断网可玩。
+- EdgeOne 限额（第三轮构建）：dist 总量 **130.85 MiB**（限 5 GiB）、文件数 **154**（限 20000）、最大单文件 22.90 MiB（既有 onnx，限 25 MiB），全部通过。
 
 ## 可复用经验
 

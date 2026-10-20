@@ -14,8 +14,6 @@ import {
   TIERS,
   FINAL_TIER,
   COMBO_WINDOW_MS,
-  sameTier,
-  nextTierIndex,
   isFinal,
   mergeScore,
   rollSpawnTier,
@@ -23,9 +21,12 @@ import {
   createOverline,
   updateOverline,
   clampAim,
-  planAimRange,
-  type OverlineState,
-  type Rect2
+  wallAimRange,
+  gammaToGravityX,
+  lerpGravityX,
+  planMerges,
+  SPAWN_GRACE_MS,
+  type OverlineState
 } from './game/logic'
 import { makeStarfield, drawSpaceBackground, paintPlanet, hash01, type Star } from './game/render'
 
@@ -46,18 +47,20 @@ const emit = defineEmits<{
   (e: 'gameover'): void
 }>()
 
-// —— 物理常量（真实细腻、堆叠稳定、不狂弹）——
+// —— 物理常量（真实细腻、堆叠稳定、不狂弹；摩擦留活口让倾斜时落底球可缓慢滚动）——
 const FIXED_MS = 1000 / 60
 const POSITION_ITER = 10
 const VELOCITY_ITER = 8
 const RESTITUTION = 0.22
-const FRICTION = 0.12
-const FRICTION_AIR = 0.016
-/** 合并允许的最大相对速度（px/帧），高速撞击不合并避免误触发 */
-const MERGE_MAX_SPEED = 5
+/** 球体摩擦：偏高可停住，留活口以便横向重力分量下缓慢滚动 */
+const BALL_FRICTION = 0.14
+/** 地面/墙体摩擦：适中，死区+摩擦保证噪声下静止球不无故滑动 */
+const GROUND_FRICTION = 0.22
+/** 空气阻尼：回正后让滚动球较快停下，避免惯性长距离滑行（球体无滚动阻力，靠阻尼耗散） */
+const FRICTION_AIR = 0.035
 const WALL = 26
-/** 待投球发光外扩 margin（box-shadow 辉光），顶部避让时计入球包围盒。 */
-const AIM_GLOW = 14
+/** 瞄准球心距墙的极小边距（全宽可投，不被 HUD 缩减）。 */
+const AIM_EDGE = 3
 
 interface Planet {
   body: Matter.Body
@@ -82,9 +85,7 @@ const phase = ref<'play' | 'win' | 'lose'>('play')
 const score = ref(0)
 const combo = ref(0)
 let currentTier = 0
-let nextTier = 1
 const currentName = ref('')
-const nextName = ref('')
 let aimX = 0
 let lastDropAt = -Infinity
 let inFlight = false
@@ -93,6 +94,15 @@ let lastMergeAt = -Infinity
 let comboTimer: ReturnType<typeof setTimeout> | null = null
 let overNotified = false
 let lastDropped: Planet | null = null
+
+// —— 重力感应状态（gamma → gravity.x，lerp 平滑；未授权/不支持回退垂直重力）——
+let sensorTargetGx = 0
+let smoothGx = 0
+let keyboardTilt = 0 // -1 左 / 0 平 / +1 右（PC 键盘 A/D 模拟倾斜）
+let gravityEnabled = true
+let sensorGranted = false
+const gravityBtnVisible = ref(false)
+const gravityOnLabel = ref('🧭 重力感应：关')
 
 // —— 表现层 ——
 interface Particle {
@@ -130,7 +140,6 @@ function radiusFor(tier: number): number {
 
 function syncQueueLabels(): void {
   currentName.value = TIERS[currentTier]?.name ?? ''
-  nextName.value = TIERS[nextTier]?.name ?? ''
 }
 
 // —— 物理世界搭建 ——
@@ -144,7 +153,7 @@ function rebuildWalls(): void {
   if (!engine) return
   for (const w of walls) Matter.Composite.remove(engine.world, w)
   walls = []
-  const opt = { isStatic: true, friction: 0.1, restitution: 0.1, label: 'wall' }
+  const opt = { isStatic: true, friction: GROUND_FRICTION, restitution: 0.1, label: 'wall' }
   const left = Matter.Bodies.rectangle(-WALL / 2, H / 2, WALL, H * 3, opt)
   const right = Matter.Bodies.rectangle(W + WALL / 2, H / 2, WALL, H * 3, opt)
   const bottom = Matter.Bodies.rectangle(W / 2, H + WALL / 2, W * 3, WALL, opt)
@@ -156,7 +165,7 @@ function spawnPlanet(tier: number, x: number, y: number, pop = true): Planet {
   const r = radiusFor(tier)
   const body = Matter.Bodies.circle(x, y, r, {
     label: 'planet',
-    friction: FRICTION,
+    friction: BALL_FRICTION,
     frictionAir: FRICTION_AIR,
     restitution: RESTITUTION,
     density: 0.0014,
@@ -170,65 +179,55 @@ function spawnPlanet(tier: number, x: number, y: number, pop = true): Planet {
   return p
 }
 
-// —— 合并扫描（每固定步后，处理同级重叠 + 低速）——
+// —— 合并扫描：同级接触即合（不以整体相对速度为门槛），planMerges 去重 + 保护期 + 延迟生成 ——
 function scanMerges(): void {
   if (!engine) return
-  const list = [...planets.values()]
-  const remove = new Set<number>()
   const now = performance.now()
-  for (let i = 0; i < list.length; i++) {
-    const a = list[i]!
-    if (remove.has(a.body.id)) continue
-    for (let j = i + 1; j < list.length; j++) {
-      const b = list[j]!
-      if (remove.has(b.body.id)) continue
-      if (!sameTier(a.tier, b.tier)) continue
-      const dx = a.body.position.x - b.body.position.x
-      const dy = a.body.position.y - b.body.position.y
-      const ra = radiusFor(a.tier)
-      const rb = radiusFor(b.tier)
-      const dist = Math.hypot(dx, dy)
-      // 相切/微渗透即合并（matter 会把完全重叠解到相切，给足接触容差）
-      if (dist > (ra + rb) * 1.06) continue
-      const rvx = a.body.velocity.x - b.body.velocity.x
-      const rvy = a.body.velocity.y - b.body.velocity.y
-      if (Math.hypot(rvx, rvy) > MERGE_MAX_SPEED) continue
+  const nodes = [...planets.values()].map((p) => ({
+    id: p.body.id,
+    tier: p.tier,
+    bornAt: p.bornAt,
+    x: p.body.position.x,
+    y: p.body.position.y,
+    r: radiusFor(p.tier)
+  }))
+  const pairs = planMerges(nodes, now, SPAWN_GRACE_MS)
+  if (!pairs.length) return
 
-      const produced = nextTierIndex(a.tier)
-      if (produced === null) continue
-      const mx = (a.body.position.x + b.body.position.x) / 2
-      const my = (a.body.position.y + b.body.position.y) / 2
-      remove.add(a.body.id)
-      remove.add(b.body.id)
+  // 先统一移除被合并的两球、计分/连击/粒子（新球在循环结束后再生成，本帧不二次合并）
+  const producedList: Array<{ produced: number; mx: number; my: number }> = []
+  for (const pair of pairs) {
+    const a = planets.get(pair.a)
+    const b = planets.get(pair.b)
+    if (!a || !b) continue
+    combo.value = now - lastMergeAt <= COMBO_WINDOW_MS ? combo.value + 1 : 1
+    lastMergeAt = now
+    const gained = mergeScore(pair.produced, combo.value)
+    score.value += gained
+    emit('score', score.value)
+    emit('combo', combo.value)
+    if (comboTimer) clearTimeout(comboTimer)
+    comboTimer = setTimeout(() => emit('combo', 0), 1100)
 
-      // 连击窗口内连锁
-      combo.value = now - lastMergeAt <= COMBO_WINDOW_MS ? combo.value + 1 : 1
-      lastMergeAt = now
-      const gained = mergeScore(produced, combo.value)
-      score.value += gained
-      emit('score', score.value)
-      emit('combo', combo.value)
-      if (comboTimer) clearTimeout(comboTimer)
-      comboTimer = setTimeout(() => emit('combo', 0), 1100)
+    burst(pair.mx, pair.my, pair.produced, combo.value)
+    audio.blip(Math.min(9, combo.value - 1))
+    haptic(combo.value > 1 ? [14, 30, 14] : 10, props.vibrate)
+    shakeMag = Math.min(14, 5 + combo.value * 2)
 
-      burst(mx, my, produced, combo.value)
-      audio.blip(Math.min(9, combo.value - 1))
-      haptic(combo.value > 1 ? [14, 30, 14] : 10, props.vibrate)
-      shakeMag = Math.min(14, 5 + combo.value * 2)
+    Matter.Composite.remove(engine.world, a.body)
+    Matter.Composite.remove(engine.world, b.body)
+    planets.delete(a.body.id)
+    planets.delete(b.body.id)
+    producedList.push({ produced: pair.produced, mx: pair.mx, my: pair.my })
+  }
 
-      Matter.Composite.remove(engine.world, a.body)
-      Matter.Composite.remove(engine.world, b.body)
-      planets.delete(a.body.id)
-      planets.delete(b.body.id)
-
-      const np = spawnPlanet(produced, mx, my)
-      Matter.Body.setVelocity(np.body, { x: (rvx) * -0.02, y: -0.6 })
-
-      if (isFinal(produced)) {
-        onWin(mx, my)
-        return
-      }
-      break
+  // 循环结束后再生成高一级球，避免本帧连锁二次合并（连锁靠后续自然碰撞）
+  for (const { produced, mx, my } of producedList) {
+    const np = spawnPlanet(produced, mx, my)
+    Matter.Body.setVelocity(np.body, { x: 0, y: -0.6 })
+    if (isFinal(produced)) {
+      onWin(mx, my)
+      return
     }
   }
 }
@@ -274,47 +273,9 @@ function onLose(): void {
   emit('gameover')
 }
 
-// —— 投放：瞄准区间由实测 HUD 包围盒避让（纯函数 planAimRange 求区间）——
-function localRect(el: Element): Rect2 | null {
-  const root = rootEl.value
-  if (!root) return null
-  const rr = root.getBoundingClientRect()
-  const b = el.getBoundingClientRect()
-  return { x: b.left - rr.left, y: b.top - rr.top, w: b.width, h: b.height }
-}
-
-/** 顶部需避让的 HUD：本组件「下一个」胶囊 + 宿主左上分数 + 右上控制钮（实测局部包围盒）。 */
-function avoidRects(): Rect2[] {
-  const out: Rect2[] = []
-  const root = rootEl.value
-  if (!root) return out
-  for (const el of root.querySelectorAll('.mp-next')) {
-    const r = localRect(el)
-    if (r) out.push(r)
-  }
-  for (const sel of ['.hud-left', '.hud-btn']) {
-    const el = document.querySelector(sel)
-    if (el) {
-      const r = localRect(el)
-      if (r) out.push(r)
-    }
-  }
-  return out
-}
-
+// —— 投放：全宽可投，球心只受墙体约束，不被 HUD 缩减 ——
 function settleRange(): { min: number; max: number } {
-  const r = radiusFor(currentTier)
-  const railEl = rootEl.value?.querySelector('.mp-rail')
-  const rail = railEl ? localRect(railEl) : null
-  return planAimRange({
-    width: W,
-    radius: r,
-    glow: AIM_GLOW,
-    wallPad: WALL,
-    bandY: rail?.y ?? 0,
-    bandH: rail?.h ?? railH,
-    avoid: avoidRects()
-  })
+  return wallAimRange(W, radiusFor(currentTier), AIM_EDGE)
 }
 
 function tryDrop(): void {
@@ -330,8 +291,8 @@ function tryDrop(): void {
   inFlight = true
   audio.blip(0)
   haptic(6, props.vibrate)
-  currentTier = nextTier
-  nextTier = rollSpawnTier()
+  // 不展示「下一个」预告：投出后直接随机生成当前球
+  currentTier = rollSpawnTier()
   syncQueueLabels()
 }
 
@@ -361,17 +322,104 @@ function onPointerUp(): void {
 }
 
 function onKey(e: KeyboardEvent): void {
-  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+  // 瞄准：仅 ←/→（鼠标移动也可瞄准）
+  if (e.key === 'ArrowLeft') {
     aimX = clampAim(aimX - 16, settleRange().min, settleRange().max)
     e.preventDefault()
-  } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+  } else if (e.key === 'ArrowRight') {
     aimX = clampAim(aimX + 16, settleRange().min, settleRange().max)
     e.preventDefault()
   } else if (e.key === ' ' || e.key === 'Enter') {
     e.preventDefault()
     audio.ensure()
     tryDrop()
+    return
   }
+  // 倾斜（PC 无传感器，用 A/D 模拟重力左/右倾；与瞄准键区分）
+  if (e.key === 'a' || e.key === 'A') keyboardTilt = -1
+  else if (e.key === 'd' || e.key === 'D') keyboardTilt = 1
+}
+
+function onKeyUp(e: KeyboardEvent): void {
+  if ((e.key === 'a' || e.key === 'A') && keyboardTilt === -1) keyboardTilt = 0
+  else if ((e.key === 'd' || e.key === 'D') && keyboardTilt === 1) keyboardTilt = 0
+}
+
+// —— 重力感应：gamma → target.gravity.x，lerp 平滑；未授权/不支持回退垂直重力 ——
+function currentTargetGx(): number {
+  if (!gravityEnabled) return 0
+  // PC 键盘倾斜优先；移动端已授权时用传感器
+  if (keyboardTilt !== 0) return keyboardTilt * 0.6
+  if (sensorGranted) return sensorTargetGx
+  return 0
+}
+
+function applyGravity(): void {
+  if (!engine) return
+  const target = currentTargetGx()
+  smoothGx = lerpGravityX(smoothGx, target)
+  engine.gravity.x = smoothGx
+  engine.gravity.y = 1
+}
+
+function onOrientation(e: DeviceOrientationEvent): void {
+  if (!sensorGranted) return
+  sensorTargetGx = gammaToGravityX(e.gamma ?? 0)
+}
+
+type DOEPermission = 'granted' | 'denied' | 'default'
+interface DOEWithRequest extends DeviceOrientationEvent {
+  requestPermission?: () => Promise<DOEPermission>
+}
+
+async function enableSensor(): Promise<void> {
+  const doe = DeviceOrientationEvent as unknown as DOEWithRequest
+  try {
+    if (typeof doe.requestPermission === 'function') {
+      const res = await doe.requestPermission()
+      if (res !== 'granted') {
+        sensorGranted = false
+        gravityBtnVisible.value = true
+        gravityOnLabel.value = '🧭 重力感应：被拒绝'
+        return
+      }
+    }
+    sensorGranted = true
+    window.addEventListener('deviceorientation', onOrientation)
+    gravityBtnVisible.value = true
+    gravityOnLabel.value = '🧭 重力感应：开'
+  } catch {
+    sensorGranted = false
+    gravityBtnVisible.value = true
+    gravityOnLabel.value = '🧭 重力感应：不可用'
+  }
+}
+
+function toggleGravity(): void {
+  // 未授权的 iOS/移动端：首次点击在用户手势内请求权限；已授权则切换开关
+  if (!sensorGranted && typeof (DeviceOrientationEvent as unknown as DOEWithRequest).requestPermission === 'function') {
+    void enableSensor()
+    return
+  }
+  gravityEnabled = !gravityEnabled
+  if (!gravityEnabled) sensorTargetGx = 0
+  gravityBtnVisible.value = true
+  gravityOnLabel.value = gravityEnabled ? '🧭 重力感应：开' : '🧭 重力感应：关'
+}
+
+/** 非 iOS（无需 requestPermission）：有传感器能力即挂监听，静默回退垂直。 */
+function autoAttachSensor(): void {
+  const doe = DeviceOrientationEvent as unknown as DOEWithRequest
+  if (typeof doe.requestPermission === 'function') {
+    // iOS 13+：不自动挂，等用户点按钮授权
+    gravityBtnVisible.value = true
+    gravityOnLabel.value = '🧭 开启重力感应'
+    return
+  }
+  sensorGranted = true
+  window.addEventListener('deviceorientation', onOrientation)
+  gravityBtnVisible.value = true
+  gravityOnLabel.value = '🧭 重力感应：开'
 }
 
 // —— 主循环：固定步长 + 子步 ——
@@ -381,6 +429,8 @@ function loop(now: number): void {
   let dt = (now - last) / 1000
   last = now
   if (dt > 0.05) dt = 0.05
+
+  applyGravity()
 
   if (!props.paused && phase.value === 'play') {
     acc += dt * 1000
@@ -543,7 +593,6 @@ function reset(): void {
   lastDropped = null
   particles = []
   currentTier = rollSpawnTier()
-  nextTier = rollSpawnTier()
   syncQueueLabels()
   emit('score', 0)
   emit('combo', 0)
@@ -567,13 +616,24 @@ function exposeDebug(): void {
     },
     holdAbove: (on: boolean) => {
       debugAbove = on
-    }
+    },
+    // 测试接缝：注入设备 gamma 倾角（绕过授权），读取平滑后的 world.gravity.x
+    setGamma: (gamma: number) => {
+      sensorGranted = true
+      sensorTargetGx = gammaToGravityX(gamma)
+    },
+    setKeyboardTilt: (v: number) => {
+      keyboardTilt = v
+    },
+    gravityX: () => (engine ? engine.gravity.x : 0),
+    // 测试接缝：直接取某球当前 x（倾斜滚动位移断言用）
+    planetX: (id: number) => planets.get(id)?.body.position.x ?? null,
+    planetY: (id: number) => planets.get(id)?.body.position.y ?? null
   }
 }
 
-// —— 结算卡片样式绑定 ——
+// —— 顶部样式绑定（无「下一个」预告）——
 const aimStyle = ref<Record<string, string>>({})
-const nextStyle = ref<Record<string, string>>({})
 const guideStyle = ref<Record<string, string>>({})
 function bindChrome(): void {
   const r = radiusFor(currentTier)
@@ -585,17 +645,49 @@ function bindChrome(): void {
     background: c.bg,
     marginLeft: `${-r}px`
   }
-  const n = radiusFor(nextTier)
-  const nc = cssOf(nextTier)
-  nextStyle.value = {
-    width: `${n * 1.6}px`,
-    height: `${n * 1.6}px`,
-    background: nc.bg
-  }
   guideStyle.value = {
     left: `${aimX}px`,
     top: `${railH}px`,
     height: `${Math.max(0, H - railH)}px`
+  }
+}
+
+/**
+ * 左上分数 HUD  legibility：球可贴全宽，视觉重叠时靠「更小字号 + 半透明圆角衬底」保证分数可读，
+ * 而不是缩减可投范围。仅本会话临时调整宿主 HUD，卸载时还原。
+ */
+let savedHudStyle: Record<string, string> | null = null
+function hostHudEl(): HTMLElement | null {
+  return document.querySelector('.hud-left') as HTMLElement | null
+}
+function styleHostHud(): void {
+  const el = hostHudEl()
+  if (!el) return
+  savedHudStyle = {
+    fontSize: el.style.fontSize,
+    padding: el.style.padding,
+    borderRadius: el.style.borderRadius,
+    background: el.style.background,
+    backdropFilter: el.style.backdropFilter,
+    zIndex: el.style.zIndex
+  }
+  el.style.fontSize = '22px'
+  el.style.padding = '3px 10px'
+  el.style.borderRadius = '999px'
+  el.style.background = 'rgba(12,18,38,0.62)'
+  el.style.backdropFilter = 'blur(6px)'
+  // 分数衬底置于待投球上层：最左贴边时分数仍可读，而不是限制投放范围
+  el.style.zIndex = '30'
+}
+function restoreHostHud(): void {
+  const el = hostHudEl()
+  if (el && savedHudStyle) {
+    el.style.fontSize = savedHudStyle.fontSize ?? ''
+    el.style.padding = savedHudStyle.padding ?? ''
+    el.style.borderRadius = savedHudStyle.borderRadius ?? ''
+    el.style.background = savedHudStyle.background ?? ''
+    el.style.backdropFilter = savedHudStyle.backdropFilter ?? ''
+    el.style.zIndex = savedHudStyle.zIndex ?? ''
   }
 }
 
@@ -615,14 +707,16 @@ watch(
 onMounted(() => {
   buildWorld()
   currentTier = rollSpawnTier()
-  nextTier = rollSpawnTier()
   syncQueueLabels()
   resize()
   aimX = W / 2
   exposeDebug()
+  styleHostHud()
+  autoAttachSensor()
   ro = new ResizeObserver(() => resize())
   if (rootEl.value) ro.observe(rootEl.value)
   window.addEventListener('keydown', onKey)
+  window.addEventListener('keyup', onKeyUp)
   raf = requestAnimationFrame(loop)
 })
 
@@ -631,6 +725,9 @@ onBeforeUnmount(() => {
   if (comboTimer) clearTimeout(comboTimer)
   ro?.disconnect()
   window.removeEventListener('keydown', onKey)
+  window.removeEventListener('keyup', onKeyUp)
+  window.removeEventListener('deviceorientation', onOrientation)
+  restoreHostHud()
   if (engine) {
     Matter.Engine.clear(engine)
     engine = null
@@ -650,17 +747,20 @@ onBeforeUnmount(() => {
   >
     <canvas ref="canvasEl" class="mp-canvas" />
 
-    <!-- 顶部瞄准滑轨（待投球固定在顶部安全区，手指不压堆叠区） -->
+    <!-- 顶部瞄准滑轨（待投球固定在顶部安全区，手指不压堆叠区；全宽可投） -->
     <div class="mp-rail">
-      <div class="mp-next">
-        <span class="mp-next-label">下一个</span>
-        <span class="mp-mini" :style="nextStyle" />
-        <span class="mp-next-name">{{ nextName }}</span>
-      </div>
       <div class="mp-aim" :style="aimStyle">
         <span class="mp-aim-name">{{ currentName }}</span>
       </div>
     </div>
+
+    <!-- 重力感应开关（iOS 需用户手势授权；未授权/不支持静默回退垂直重力） -->
+    <button
+      v-if="gravityBtnVisible"
+      type="button"
+      class="mp-grav"
+      @click.stop="toggleGravity"
+    >{{ gravityOnLabel }}</button>
     <!-- 落点引导线（从顶部滑轨向下标出落点列） -->
     <div class="mp-guide" :style="guideStyle" />
 
@@ -702,30 +802,19 @@ onBeforeUnmount(() => {
   pointer-events: none;
   z-index: 5;
 }
-.mp-next {
+.mp-grav {
   position: absolute;
-  top: 8px;
-  right: calc(env(safe-area-inset-right, 0px) + 14px);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  right: calc(env(safe-area-inset-right, 0px) + 12px);
+  z-index: 6;
+  padding: 5px 11px;
   border-radius: 999px;
-  background: rgba(16, 22, 44, 0.5);
-  border: 1px solid rgba(140, 180, 255, 0.2);
-  backdrop-filter: blur(6px);
-}
-.mp-next-label {
+  border: 1px solid rgba(140, 180, 255, 0.25);
+  background: rgba(16, 22, 44, 0.55);
+  color: #cfe0ff;
   font-size: 11px;
-  color: #a9bde6;
-}
-.mp-mini {
-  border-radius: 50%;
-  box-shadow: 0 0 10px rgba(150, 190, 255, 0.5);
-}
-.mp-next-name {
-  font-size: 12px;
-  color: #d8e6ff;
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
 }
 .mp-aim {
   position: absolute;

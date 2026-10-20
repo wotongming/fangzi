@@ -92,6 +92,39 @@ async function deterministicMerge(page, tier, x) {
   return scoreNow(page)
 }
 
+/** 斜向/切向首次接触：两只同级错开微小水平距接触即合并，返回合成后分数。 */
+async function obliqueMerge(page, tier, x, dx) {
+  await page.evaluate(([t, px, d]) => {
+    window.__mergePlanet.spawn(t, px)
+    window.__mergePlanet.spawn(t, px + d)
+  }, [tier, x, dx])
+  await page.waitForTimeout(350)
+  return scoreNow(page)
+}
+
+/** 倾斜滚动：底部静置球向右倾 → 朝低侧(右)显著位移，回正后停止。 */
+async function tiltRollTest(page) {
+  const id = await page.evaluate(() => window.__mergePlanet.spawn(4, 320))
+  await page.waitForTimeout(1000) // 落底静止
+  const x0 = await page.evaluate((i) => window.__mergePlanet.planetX(i), id)
+  await page.evaluate(() => window.__mergePlanet.setGamma(28))
+  await page.waitForTimeout(1500)
+  const x1 = await page.evaluate((i) => window.__mergePlanet.planetX(i), id)
+  const gx1 = await page.evaluate(() => window.__mergePlanet.gravityX())
+  await shot(page, 'mp-pc-tilt.png') // 右倾中：落底球已向右(低侧)滚动
+  await page.evaluate(() => window.__mergePlanet.setGamma(0))
+  await page.waitForTimeout(1100)
+  const xa = await page.evaluate((i) => window.__mergePlanet.planetX(i), id)
+  await page.waitForTimeout(1100)
+  const xb = await page.evaluate((i) => window.__mergePlanet.planetX(i), id)
+  const gx2 = await page.evaluate(() => window.__mergePlanet.gravityX())
+  const tail = Math.abs(xb - xa)
+  log('tilt roll x0=', Math.round(x0), 'x1=', Math.round(x1), 'xa=', Math.round(xa), 'xb=', Math.round(xb), 'tail=', Math.round(tail), 'gx1=', gx1.toFixed(3), 'gx2=', gx2.toFixed(3))
+  if (!(x1 - x0 > 25)) fail.push('倾斜后落底球未向低侧显著滚动')
+  if (Math.abs(gx2) > 0.02) fail.push('回正后 world.gravity.x 未归零')
+  if (tail > 8) fail.push('回正后球仍在滑动（第二段位移 ' + Math.round(tail) + 'px）')
+}
+
 /** 截图铺陈：摆放几颗不同等级展示球（不同级互不合并，仅用于画面饱满度，不影响断言）。 */
 async function decorateBoard(page) {
   await page.evaluate(() => {
@@ -104,48 +137,46 @@ async function decorateBoard(page) {
 }
 
 /**
- * 顶部滑轨避让断言：把待投球移到 最左/居中/最右 三档，
- * 逐档断言待投球包围盒与右上「下一个」胶囊、左上分数 HUD 矩形交集为空；
- * 并保证左右可投列未被过度压缩（仍有可观横向范围）。
+ * 全宽可投断言：「下一个」胶囊 DOM 不存在；待投球可贴到最左/最右墙内边界，
+ * 不被左上分数 HUD 缩减（视觉重叠由 HUD 样式/衬底解决）。
  */
-async function assertAimClearsHud(page, label) {
-  let leftCenter = 0
-  let rightCenter = 0
-  for (const [name, x] of [['left', -100], ['center', null], ['right', 9999]]) {
-    await page.evaluate((xv) => {
-      const api = window.__mergePlanet
-      if (xv === null) api.aim(window.innerWidth / 2)
-      else api.aim(xv)
-    }, x)
-    await page.waitForTimeout(90)
-    const r = await page.evaluate(() => {
-      const ov = (a, b) =>
-        !!a && !!b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
-      const a = document.querySelector('.mp-aim')?.getBoundingClientRect()
-      const next = document.querySelector('.mp-next')?.getBoundingClientRect()
-      const left = document.querySelector('.hud-left')?.getBoundingClientRect()
-      return {
-        aim: a,
-        center: a ? (a.left + a.right) / 2 : 0,
-        hitNext: ov(a, next),
-        hitLeft: ov(a, left)
-      }
-    })
-    log(`[${label}:${name}] aim center=${Math.round(r.center)} hitNext=${r.hitNext} hitLeft=${r.hitLeft}`)
-    if (r.hitNext) fail.push(`${label}-${name} 待投球与右上「下一个」胶囊重叠`)
-    if (r.hitLeft) fail.push(`${label}-${name} 待投球与左上分数 HUD 重叠`)
-    if (name === 'left') leftCenter = r.center
-    if (name === 'right') rightCenter = r.center
+async function assertFullWidthAim(page, label) {
+  // 1) 「下一个」预告胶囊必须不存在
+  const hasNext = await page.evaluate(() => {
+    return !!document.querySelector('.mp-next') || document.body.innerText.includes('下一个')
+  })
+  if (hasNext) fail.push(`${label} 仍存在「下一个」预告胶囊/文案`)
+
+  const box = await page.locator('.mp').boundingBox()
+  const width = box.width
+  // 2) 最左档：球心贴近左墙（球左缘距容器左缘 ≤ 半径+边距+容差）
+  await page.evaluate(() => window.__mergePlanet.aim(-100))
+  await page.waitForTimeout(90)
+  const left = await page.evaluate(() => {
+    const a = document.querySelector('.mp-aim').getBoundingClientRect()
+    const root = document.querySelector('.mp').getBoundingClientRect()
+    return { left: a.left - root.left, right: a.right - root.left, r: (a.right - a.left) / 2 }
+  })
+  log(`[${label}:left] ball.left=${Math.round(left.left)} r=${Math.round(left.r)}`)
+  if (left.left > left.r + 12) fail.push(`${label} 最左档被 HUD 推离左墙（left=${Math.round(left.left)}）`)
+
+  // 3) 最右档：球右缘贴近右墙
+  await page.evaluate(() => window.__mergePlanet.aim(9999))
+  await page.waitForTimeout(90)
+  const right = await page.evaluate(() => {
+    const a = document.querySelector('.mp-aim').getBoundingClientRect()
+    const root = document.querySelector('.mp').getBoundingClientRect()
+    return { right: a.right - root.left, r: (a.right - a.left) / 2, width: root.width }
+  })
+  log(`[${label}:right] ball.right=${Math.round(right.right)} width=${Math.round(right.width)} r=${Math.round(right.r)}`)
+  if (right.width - right.right > right.r + 12) {
+    fail.push(`${label} 最右档被推离右墙（gap=${Math.round(right.width - right.right)}）`)
   }
-  // 左右可投列仍是两个不同落点（中心点拉开 >60px），未被压没成单点；右侧胶囊本就占用右区
-  const span = rightCenter - leftCenter
-  log(`[${label}] 左右落点中心跨度 ≈ ${Math.round(span)}px`)
-  if (!(span > 60)) fail.push(`${label} 左右可投列被过度压缩（中心跨度 ${Math.round(span)}px）`)
 }
 
-/** 把待投球拨到最右档并等待稳定（用于最右不压胶囊截图）。 */
-async function aimRightmost(page) {
-  await page.evaluate(() => window.__mergePlanet.aim(9999))
+/** 拨到指定档并等待（截图用）。 */
+async function aimAt(page, x) {
+  await page.evaluate((xv) => window.__mergePlanet.aim(xv), x)
   await page.waitForTimeout(120)
 }
 
@@ -156,20 +187,26 @@ async function runPC(page) {
   await enterGame(page)
   await overflow(page, 'pc-picker')
 
-  // 顶部滑轨左/中/右三档避让 HUD（PC 1280×860）
-  await assertAimClearsHud(page, 'pc')
-  await aimRightmost(page)
-  await shot(page, 'mp-pc-occlusion.png')
+  // 全宽可投：无「下一个」胶囊，最左/最右均可贴墙（PC 1280×860）
+  await assertFullWidthAim(page, 'pc')
+  await aimAt(page, -100)
+  await shot(page, 'mp-pc-left.png')
+  await aimAt(page, 9999)
+  await shot(page, 'mp-pc-right.png')
+
+  // 倾斜滚动（PC 无传感器，经测试钩子注入 gamma）：落底球右倾滚动、回正停止
+  await tiltRollTest(page)
+  await page.evaluate(() => window.__mergePlanet.reset())
 
   // 真实投放若干次（输入链路），不强制立即得分
   for (const x of [0.35, 0.55, 0.45]) await realDrop(page, x)
   await page.waitForTimeout(500)
   await shot(page, 'mp-pc-drop.png')
 
-  // 确定性合成升级（陨石→月球），分数应 >0
-  const s1 = await deterministicMerge(page, 0, 220)
-  log('首次合成后 score =', s1)
-  if (!(s1 > 0)) fail.push('同级合成后分数未增长')
+  // 斜向/切向首次接触即合并（陨石→月球），分数应 >0（修斜碰首撞不合）
+  const s1 = await obliqueMerge(page, 0, 220, 30)
+  log('斜向首次合成后 score =', s1)
+  if (!(s1 > 0)) fail.push('斜向同级首次接触未合成加分')
   await decorateBoard(page)
   await shot(page, 'mp-pc-merge.png')
 
@@ -214,8 +251,8 @@ async function runMobile(page) {
   await shot(page, 'mp-mobile-picker.png')
   await enterGame(page)
 
-  // 顶部滑轨左/中/右三档避让 HUD（手机 375×812）
-  await assertAimClearsHud(page, 'mobile')
+  // 全宽可投：无「下一个」胶囊，最左/最右均可贴墙（手机 375×812）
+  await assertFullWidthAim(page, 'mobile')
 
   // 顶部滑轨拖动瞄准（手指在顶部窄横条）
   const box = await page.locator('.mp').boundingBox()
@@ -248,9 +285,11 @@ async function runMobile(page) {
   if (aim2 && aim2.bottom >= touchY) fail.push('下半屏拖动时待投球压到触点 y 之下（遮挡落点）')
   if (guide2 && guide2.top >= touchY) fail.push('引导线未位于触点 y 之上')
   await shot(page, 'mp-mobile-drop.png')
-  // 最右档：待投球内缩到「下一个」胶囊左侧，不压胶囊（用于几何复核截图）
-  await aimRightmost(page)
-  await shot(page, 'mp-mobile-occlusion.png')
+  // 全宽最左/最右贴墙截图（无胶囊，球可贴边）
+  await aimAt(page, -100)
+  await shot(page, 'mp-mobile-left.png')
+  await aimAt(page, 9999)
+  await shot(page, 'mp-mobile-right.png')
   await overflow(page, 'mobile-play')
 }
 

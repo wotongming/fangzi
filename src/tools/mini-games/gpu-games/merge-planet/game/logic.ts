@@ -152,78 +152,123 @@ export function clampAim(x: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, x))
 }
 
-/** 局部坐标矩形（x/y 左上角，w/h 宽高），用于顶部 HUD 避让。 */
-export interface Rect2 {
-  x: number
-  y: number
-  w: number
-  h: number
-}
-
-/** 两矩形是否相交（pad 为额外外扩间距，用于保守判空）。 */
-export function rectsOverlap(a: Rect2, b: Rect2, pad = 0): boolean {
-  return (
-    a.x <= b.x + b.w + pad &&
-    b.x <= a.x + a.w + pad &&
-    a.y <= b.y + b.h + pad &&
-    b.y <= a.y + a.h + pad
-  )
-}
-
-/** 待投球与避让 HUD 之间的水平呼吸间距（px），避免发光边缘贴住文字。 */
-export const AIM_HUD_GAP = 10
-
-export interface AimRange {
-  min: number
-  max: number
-}
-
 /**
- * 计算待投球瞄准中心 X 的允许区间（纯函数，组件实测 HUD 包围盒后传入）。
- *
- * - 球完整包围盒 = 半径 + 发光外扩 reach，在顶部滑轨带内水平移动；
- * - 仅当 HUD 与滑轨带在垂直方向也相交时才做水平避让，HUD 按中心落在左/右半屏归为左/右边界；
- * - 依据 HUD **实际包围盒**避让（胶囊随长星球名变宽会自动内缩），不写死小常数；
- * - 避让后若区间被压没（min>max，窄屏/HUD 过宽），回退为墙内居中可投，保证至少一个可投点，
- *   且不把左右可投范围过度压缩。
+ * 全宽可投：待投球球心允许区间只受墙体约束（球半径 + 极小边距），
+ * 不被左上分数 HUD 缩减；视觉重叠由 HUD 样式/层级解决。
  */
-export function planAimRange(opts: {
-  width: number
-  radius: number
-  glow: number
-  wallPad: number
-  bandY: number
-  bandH: number
-  avoid?: Rect2[]
-}): AimRange {
-  const reach = Math.max(0, opts.radius) + Math.max(0, opts.glow)
-  const band: Rect2 = { x: 0, y: opts.bandY, w: opts.width, h: opts.bandH }
-  let min = opts.wallPad + reach
-  let max = opts.width - opts.wallPad - reach
-  // 画布过窄导致墙内区间非法：直接居中兜底
+export function wallAimRange(width: number, radius: number, edge = 2): { min: number; max: number } {
+  const r = Math.max(0, radius)
+  let min = edge + r
+  let max = width - edge - r
   if (min > max) {
-    const c = opts.width / 2
-    return { min: c, max: c }
-  }
-  for (const hud of opts.avoid ?? []) {
-    if (!rectsOverlap(band, hud, AIM_HUD_GAP)) continue
-    const center = hud.x + hud.w / 2
-    if (center >= opts.width / 2) {
-      // 右侧 HUD（如「下一个」胶囊）：球右缘 ≤ HUD 左缘 - gap
-      const limit = hud.x - reach - AIM_HUD_GAP
-      if (limit < max) max = limit
-    } else {
-      // 左侧 HUD（如左上分数）：球左缘 ≥ HUD 右缘 + gap
-      const limit = hud.x + hud.w + reach + AIM_HUD_GAP
-      if (limit > min) min = limit
-    }
-  }
-  // 避让后区间被压没：不压没可投范围，回退墙内居中
-  if (min > max) {
-    const c = (opts.wallPad + reach + opts.width - opts.wallPad - reach) / 2
+    const c = width / 2
     return { min: c, max: c }
   }
   return { min, max }
+}
+
+// —— 重力感应：设备 gamma（左右倾角，度）平滑映射 world.gravity.x ——
+
+/** 倾角死区（度）：|gamma| 小于该值视为水平，防抖避免噪声滑动。 */
+export const GRAVITY_DEADZONE_DEG = 5
+/** |gravity.x| 上限（相对 gravity.y=1 的无量纲），防止滚得过猛。 */
+export const GRAVITY_MAX_TILT = 0.6
+/** 30° 倾斜即达到最大横向重力（参考满偏角）。 */
+export const GRAVITY_FULL_DEG = 30
+/** 每帧对目标重力做指数平滑的系数（lerp alpha），禁止跳变。 */
+export const GRAVITY_LERP_ALPHA = 0.12
+
+/**
+ * gamma（度，左负右正）→ 目标 gravity.x。
+ * 死区内归 0；按 GRAVITY_FULL_DEG 满偏映射并 clamp 到 ±GRAVITY_MAX_TILT；
+ * 非法/NaN 回退 0（垂直重力）。
+ */
+export function gammaToGravityX(
+  gamma: number,
+  opts: { deadzoneDeg?: number; maxTilt?: number; fullDeg?: number } = {}
+): number {
+  const dz = opts.deadzoneDeg ?? GRAVITY_DEADZONE_DEG
+  const max = opts.maxTilt ?? GRAVITY_MAX_TILT
+  const full = opts.fullDeg ?? GRAVITY_FULL_DEG
+  if (!Number.isFinite(gamma)) return 0
+  const g = Math.abs(gamma) < dz ? 0 : gamma
+  const v = (g / full) * max
+  return Math.max(-max, Math.min(max, v))
+}
+
+/** 对当前 gravity.x 朝目标做指数平滑（禁止跳变）。 */
+export function lerpGravityX(current: number, target: number, alpha: number = GRAVITY_LERP_ALPHA): number {
+  if (!Number.isFinite(current)) current = 0
+  if (!Number.isFinite(target)) target = 0
+  const a = Math.max(0, Math.min(1, alpha))
+  return current + (target - current) * a
+}
+
+// —— 同级合并规划（接触即合，不以整体相对速度为门槛；持续接触兜底 + 去重）——
+
+/** 新球出生后的保护期（ms）：期内不参与合并，避免刚投出/刚合成误合。 */
+export const SPAWN_GRACE_MS = 260
+
+/** 合并候选节点（vx/vy 仅用于测试演示切向速度不再阻止合并，规划时被忽略）。 */
+export interface MergeNode {
+  id: number
+  tier: number
+  bornAt: number
+  x: number
+  y: number
+  r: number
+  vx?: number
+  vy?: number
+}
+
+export interface MergePair {
+  a: number
+  b: number
+  mx: number
+  my: number
+  produced: number
+}
+
+/** 同级、已过保护期、相切/微渗透即构成可合并接触（不看整体相对速度，切向滑动不阻止合并）。 */
+export function contactsForMerge(a: MergeNode, b: MergeNode, now: number, graceMs = SPAWN_GRACE_MS): boolean {
+  if (now - a.bornAt < graceMs || now - b.bornAt < graceMs) return false
+  if (!sameTier(a.tier, b.tier)) return false
+  const dist = Math.hypot(a.x - b.x, a.y - b.y)
+  return dist <= (a.r + b.r) * 1.08
+}
+
+/**
+ * 每帧确定性挑选本帧要合并的同级对：
+ * - 一球同帧只合一个（按列表顺序取最先接触/id 最小）；
+ * - 新合成球不在本帧二次合并（调用方在规划结束后再生成）；
+ * - 不同级永不合；保护期内新球不误合。
+ */
+export function planMerges(nodes: MergeNode[], now: number, graceMs = SPAWN_GRACE_MS): MergePair[] {
+  const used = new Set<number>()
+  const pairs: MergePair[] = []
+  for (let i = 0; i < nodes.length; i++) {
+    const a = nodes[i]!
+    if (used.has(a.id)) continue
+    if (now - a.bornAt < graceMs) continue
+    for (let j = i + 1; j < nodes.length; j++) {
+      const b = nodes[j]!
+      if (used.has(b.id)) continue
+      if (!contactsForMerge(a, b, now, graceMs)) continue
+      const produced = nextTierIndex(a.tier)
+      if (produced === null) continue
+      used.add(a.id)
+      used.add(b.id)
+      pairs.push({
+        a: a.id,
+        b: b.id,
+        mx: (a.x + b.x) / 2,
+        my: (a.y + b.y) / 2,
+        produced
+      })
+      break // a 本帧只合一个
+    }
+  }
+  return pairs
 }
 
 /** 最高分纯函数：返回新最高分与是否刷新纪录（持久化由宿主 storage 负责）。 */

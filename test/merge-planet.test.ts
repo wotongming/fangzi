@@ -18,11 +18,16 @@ import {
   createOverline,
   updateOverline,
   clampAim,
-  planAimRange,
-  rectsOverlap,
-  AIM_HUD_GAP,
+  wallAimRange,
+  gammaToGravityX,
+  lerpGravityX,
+  GRAVITY_DEADZONE_DEG,
+  GRAVITY_MAX_TILT,
+  planMerges,
+  contactsForMerge,
+  SPAWN_GRACE_MS,
   recordBest,
-  type Rect2
+  type MergeNode
 } from '../src/tools/mini-games/gpu-games/merge-planet/game/logic.ts'
 
 test('进化链：11 级，半径与基础分严格递增，终极为黑洞', () => {
@@ -136,71 +141,107 @@ test('瞄准夹取：越界收敛、NaN 归中、min>max 归中', () => {
   assert.equal(clampAim(10, 300, 100), 200)
 })
 
-test('避让区间：无 HUD 时退回纯墙内区间', () => {
-  const p = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76 })
-  assert.equal(p.min, 26 + 30)
-  assert.equal(p.max, 375 - 26 - 30)
+test('全宽可投：墙内区间只受球半径+极小边距约束，不被 HUD 缩减', () => {
+  const p = wallAimRange(375, 16, 3)
+  assert.equal(p.min, 3 + 16)
+  assert.equal(p.max, 375 - 3 - 16)
+  // PC 宽屏左右都能贴边
+  const pc = wallAimRange(1280, 20, 3)
+  assert.equal(pc.min, 23)
+  assert.equal(pc.max, 1280 - 23)
+  // 过窄回退居中，不抛错
+  const n = wallAimRange(10, 30, 3)
+  assert.equal(n.min, n.max)
 })
 
-test('避让区间：右侧胶囊把右界内缩，球贴 max 右缘不相交', () => {
-  const reach = 16 + 14
-  const capsule: Rect2 = { x: 300, y: 8, w: 62, h: 34 }
-  const p = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [capsule] })
-  // max = capsule.x - reach - GAP
-  assert.equal(p.max, 300 - reach - AIM_HUD_GAP)
-  // 球包围盒（含发光）贴 max 时与胶囊无交集
-  const ball: Rect2 = { x: p.max - reach, y: 0, w: reach * 2, h: 76 }
-  assert.equal(rectsOverlap(ball, capsule), false)
-  // 左界不受右侧胶囊影响，仍是墙内左界
-  assert.equal(p.min, 26 + reach)
+// —— 重力感应：gamma → gravity.x 映射 / 死区 / clamp / lerp ——
+
+test('重力映射：死区内归 0，正/负倾角映射并 clamp 到 ±max，NaN 回退 0', () => {
+  assert.equal(gammaToGravityX(0), 0)
+  assert.equal(gammaToGravityX(3), 0) // 小于死区 5°
+  assert.ok(gammaToGravityX(30) > 0)
+  assert.equal(gammaToGravityX(30), GRAVITY_MAX_TILT) // 满偏 30° 到上限
+  assert.equal(gammaToGravityX(-30), -GRAVITY_MAX_TILT)
+  assert.equal(gammaToGravityX(90), GRAVITY_MAX_TILT) // 超幅 clamp
+  assert.equal(gammaToGravityX(NaN), 0)
+  assert.equal(gammaToGravityX(-90), -GRAVITY_MAX_TILT)
 })
 
-test('避让区间：左侧分数 HUD 把左界内缩，球贴 min 左缘不相交', () => {
-  const reach = 16 + 14
-  const scoreHud: Rect2 = { x: 0, y: 10, w: 46, h: 38 }
-  const p = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [scoreHud] })
-  assert.equal(p.min, scoreHud.x + scoreHud.w + reach + AIM_HUD_GAP)
-  const ball: Rect2 = { x: p.min - reach, y: 0, w: reach * 2, h: 76 }
-  assert.equal(rectsOverlap(ball, scoreHud), false)
+test('重力死区可注入：改小死区则小倾角不再归 0', () => {
+  assert.equal(gammaToGravityX(0.5, { deadzoneDeg: 1 }), 0) // 0.5<1 仍归 0
+  assert.ok(gammaToGravityX(2, { deadzoneDeg: 1 }) > 0) // 2>1 不归零
 })
 
-test('避让区间：胶囊随长文案变宽自动进一步内缩（依据实际包围盒，非写死常数）', () => {
-  const reach = 16 + 14
-  const shortCap: Rect2 = { x: 313, y: 8, w: 49, h: 34 } // 短名
-  const longCap: Rect2 = { x: 286, y: 8, w: 76, h: 34 } // 长星球名更宽
-  const a = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [shortCap] })
-  const b = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [longCap] })
-  assert.ok(b.max < a.max, '更宽胶囊应把右界压得更左')
-  // 两档右界均对应各自胶囊左缘
-  assert.equal(a.max, shortCap.x - reach - AIM_HUD_GAP)
-  assert.equal(b.max, longCap.x - reach - AIM_HUD_GAP)
+test('重力平滑：lerp 朝目标逼近且不跳变，静止目标收敛', () => {
+  let g = 0
+  for (let i = 0; i < 60; i++) g = lerpGravityX(g, 0.6)
+  assert.ok(Math.abs(g - 0.6) < 0.01)
+  // 首步只走 alpha，不直接跳到目标
+  const step = lerpGravityX(0, 0.6, 0.12)
+  assert.ok(step < 0.6 && step > 0)
+  // 非法当前值兜底为 0 后仍朝目标平滑，结果有限且非 NaN
+  const bad = lerpGravityX(NaN, 0.5)
+  assert.ok(Number.isFinite(bad) && bad > 0 && bad < 0.5)
 })
 
-test('避让区间：HUD 在滑轨带垂直之外时不做水平避让', () => {
-  const farHud: Rect2 = { x: 300, y: 400, w: 60, h: 34 }
-  const p = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [farHud] })
-  assert.equal(p.max, 375 - 26 - 30)
+// —— 同级合并：首次接触即合（去整体相对速度门槛），四种接触形态都合 ——
+
+const NOW = 100_000
+function node(id: number, tier: number, x: number, y: number, r = 16, bornAt = NOW - 1000, vx = 0, vy = 0): MergeNode {
+  return { id, tier, bornAt, x, y, r, vx, vy }
+}
+
+test('合并①垂直正碰：同级接触即升级', () => {
+  const a = node(1, 0, 100, 84)
+  const b = node(2, 0, 100, 116)
+  assert.equal(contactsForMerge(a, b, NOW), true)
+  const pairs = planMerges([a, b], NOW)
+  assert.equal(pairs.length, 1)
+  assert.equal(pairs[0]!.produced, 1)
 })
 
-test('避让区间：左右 HUD 同时避让后仍保留可投区间（min<max）', () => {
-  const reach = 16 + 14
-  const left: Rect2 = { x: 0, y: 10, w: 46, h: 38 }
-  const right: Rect2 = { x: 300, y: 8, w: 62, h: 34 }
-  const p = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [left, right] })
-  assert.ok(p.min < p.max)
-  for (const c of [p.min, (p.min + p.max) / 2, p.max]) {
-    const ball: Rect2 = { x: c - reach, y: 0, w: reach * 2, h: 76 }
-    assert.equal(rectsOverlap(ball, left), false)
-    assert.equal(rectsOverlap(ball, right), false)
-  }
+test('合并②斜向非正碰：即使连线不垂直也合并，不要求正对', () => {
+  const a = node(1, 2, 100, 100)
+  const b = node(2, 2, 124, 120) // 斜向相切
+  assert.equal(contactsForMerge(a, b, NOW), true)
+  assert.equal(planMerges([a, b], NOW).length, 1)
 })
 
-test('避让区间：窄屏+超宽 HUD 压没时回退居中，保证至少一个可投点', () => {
-  const huge: Rect2 = { x: 0, y: 8, w: 375, h: 34 }
-  const p = planAimRange({ width: 375, radius: 16, glow: 14, wallPad: 26, bandY: 0, bandH: 76, avoid: [huge] })
-  assert.equal(p.min, p.max)
-  assert.ok(Number.isFinite(p.min))
-  assert.equal(p.min, 375 / 2)
+test('合并③带切向速度擦碰：高切向速度不再阻止合并（旧整体速度门槛已去除）', () => {
+  const a = node(1, 1, 100, 100, 16, NOW - 1000, 8, 0) // 横向高速滑动
+  const b = node(2, 1, 131, 100, 16, NOW - 1000, 8, 0)
+  assert.equal(contactsForMerge(a, b, NOW), true)
+  assert.equal(planMerges([a, b], NOW).length, 1)
+})
+
+test('合并④保持贴合不分离：持续接触下一帧仍能合（持续接触兜底）', () => {
+  const a = node(1, 0, 100, 100)
+  const b = node(2, 0, 131, 100)
+  // 连续两帧都判定可合（planMerges 每帧独立，贴合不分离就不会漏）
+  assert.equal(contactsForMerge(a, b, NOW), true)
+  assert.equal(contactsForMerge(a, b, NOW + 16), true)
+})
+
+test('合并：不同级永不合；保护期内新球不误合', () => {
+  const a = node(1, 0, 100, 100)
+  const b = node(2, 1, 131, 100) // 不同级
+  assert.equal(contactsForMerge(a, b, NOW), false)
+  assert.equal(planMerges([a, b], NOW).length, 0)
+  // 刚出生（保护期内）的球不误合
+  const fresh = node(3, 0, 100, 100, 16, NOW - 50)
+  const old = node(4, 0, 131, 100, 16, NOW - 1000)
+  assert.equal(contactsForMerge(fresh, old, NOW), false)
+  assert.equal(planMerges([fresh, old], NOW).length, 0)
+})
+
+test('合并：一帧双同级只合法合并一对（去重，一球只合一个，确定性取先到）', () => {
+  const a = node(1, 0, 100, 100)
+  const b = node(2, 0, 131, 100)
+  const c = node(3, 0, 162, 100)
+  const pairs = planMerges([a, b, c], NOW)
+  assert.equal(pairs.length, 1)
+  // a 与 b 先合，c 本帧保留
+  assert.deepEqual([pairs[0]!.a, pairs[0]!.b].sort(), [1, 2])
 })
 
 test('最高分：刷新/保留/平局非新纪录，非法输入兜底 0', () => {
