@@ -26,9 +26,14 @@
 1. 用户在外部收银台（**Lemon Squeezy**，免月费、按成交抽成约 5%+，可商用、支持发卡/许可码；备选 Gumroad 抽成 10%）支付 ¥49。
 2. 收银台交付一个**许可码**：格式 `LLR-XXXX-XXXX-XXXX-XXXX`，由收银台 webhook 触发或开发者侧用私钥离线签发。
 3. 用户在扩展 options 页输入许可码 + 购买邮箱。
-4. 扩展内置**Ed25519 公钥**，用浏览器原生 **WebCrypto（SubtleCrypto.verify）本地验签**：许可码 = base32( payload ‖ signature )，payload 内含产品档位（pro/parent-pack）+ 序列号/有效期位。**无需联网授权服务器**，离线即验。
+4. 扩展内置**ECDSA P-256（ES256）公钥**，用浏览器原生 **WebCrypto（SubtleCrypto.verify）本地验签**：许可码 = base32( payload ‖ signature )，payload 内含产品档位（pro/parent-pack）+ 序列号/有效期位。**无需联网授权服务器**，离线即验。
 5. 验签通过 → chrome.storage.local 存「已激活档位」；换机由用户手动在新机 options 页重新输入同一许可码（纯本地无账号，换机不自动迁移，文档明示）。
 6. 无账号、无遥测、无联网检查；扩展除「打开收银台购买页」外不发起授权请求。
+
+**签名算法选型（2026 跨浏览器核实）**：
+- Ed25519(EdDSA) 密钥更短，但 WebCrypto 支持时间线偏晚且不齐：Chrome/Edge **137+**（2025-05 才默认开启）、Firefox 129+、Safari 17+；且 WebKit 2026-08 仍有空消息验签 bug（bugs.webkit.org/show_bug.cgi?id=321438）。来源：caniuse https://caniuse.com/mdn-api_subtlecrypto_verify_ed25519 、MDN SubtleCrypto https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto 、Chrome 137 https://developer.chrome.google.cn/blog/chrome-137-beta 。
+- **ECDSA P-256（ES256）** 在 Chrome/Edge/Firefox/Safari 所有现代版本均已长期稳定支持（Safari 7+ 即有），是「验签失败=锁功能」场景最稳妥选择。
+- 结论：**v1 主用 ECDSA P-256**。公钥为 SPKI DER（未压缩点 0x04‖X‖Y），`crypto.subtle.importKey('spki', der, {name:'ECDSA', namedCurve:'P-256'}, false, ['verify'])`，`verify({name:'ECDSA', hash:'SHA-256'}, key, sigDer, payloadBytes)`；签名为 ASN.1 DER（WebCrypto 标准）。Ed25519 留作未来可选升级（基线整体抬到 Chrome 137+ 后再切），v1 不启用。
 
 ### 4.3 诚实局限
 纯本地公钥验签无法 100% 防盗版（公钥在包内，理论上可被 patch 绕过）；靠低价（¥49）+ 用户诚信 + 签名档位（同一许可码可分档 parent-pack）控制。不为此自建后端（违背零资金/隐私定位）。
@@ -44,7 +49,7 @@
 | OpenDyslexic 字体 | Pro  dyslexia 字体 | SIL OFL 1.1 | ✅ | OFL 允许再分发，要求保留版权声明、不单独售卖字体；子集化 woff2。来源：https://opendyslexic.org/ 、OFL https://openfontlicense.org/ |
 | SpeechSynthesis | TTS | 浏览器原生 API | ✅ | 无依赖、免费、各浏览器自带。 |
 | webextension-polyfill | Chrome/Firefox API 统一 | MPL-2.0 | ✅（文件级弱 copyleft，可闭源分发使用） | 倾向**自写极薄适配层**（chrome.* 与 browser.* 两行 shim）避免引入该依赖，减小体积与法务面。 |
-| Ed25519 验签 | 许可离线校验 | WebCrypto 原生 | ✅ | 无第三方库。 |
+| ECDSA P-256(ES256) 验签 | 许可离线校验 | WebCrypto 原生 | ✅ | 无第三方库；三店全版本长期支持，v1 选定（Ed25519 留作未来升级）。 |
 
 无 NC 依赖、无非商用字体。
 
@@ -81,7 +86,7 @@
 - EdgeOne 限额对本扩展无关（独立 zip，不走 fangzi 站点发布）。
 
 ## 8. 测试策略（详见 dev）
-- 可脱离 DOM 的纯逻辑单测：中英文切句、许可 Ed25519 验签、行切分/渐变配色函数。
+- 可脱离 DOM 的纯逻辑单测：中英文切句、许可 ECDSA P-256 验签、行切分/渐变配色函数。
 - Playwright 加载未打包扩展，Chromium 自动化导航多类真实长文（英文博客/技术文档/新闻/含代码块/中文长文）：注入/退出、不破坏原页、SPA 路由变化、零横向溢出。
 - Firefox 人工兼容清单。
 - 边界：PDF 页（浏览器内置查看器不支持 content script）、纯图片页、强 CSP 站、跨域 iframe 不注入。

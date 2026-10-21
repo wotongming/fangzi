@@ -46,7 +46,8 @@
 - `chrome.storage.local` 包一层 Promise API（Firefox browser.* 适配两行 shim，不引 webextension-polyfill）。
 
 ### 1.9 许可模块
-- `license/verify.ts`：内置 Ed25519 公钥（base64），`crypto.subtle.importKey` + `verify(ED25519, ...)`；许可码格式 `LLR-XXXX-...` 去横线 base32 解码 → 验签 → 解析档位。
+- `license/verify.ts`：内置 **ECDSA P-256（ES256）公钥**（SPKI DER base64），`crypto.subtle.importKey('spki', der, {name:'ECDSA', namedCurve:'P-256'}, false, ['verify'])` → `verify({name:'ECDSA', hash:'SHA-256'}, key, sigDer, payloadBytes)`；许可码格式 `LLR-XXXX-...` 去横线 base32 解码为 `payload‖sigDer` → 验签 → 解析档位。
+- 选 ECDSA P-256 而非 Ed25519：三店全版本长期稳定（Ed25519 需 Chrome/Edge 137+、Safari 有空消息 bug，见 architect §4.2）。
 - options 页输入码 → 验签通过写 storage `{pro:true, parent:bool}`。
 
 ## 2. 纯逻辑单测清单（node:test）

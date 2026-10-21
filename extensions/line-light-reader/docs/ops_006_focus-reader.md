@@ -29,7 +29,7 @@
 
 ## 6. 外部收银台与许可码
 - 推荐 **Lemon Squeezy**（https://www.lemonsqueezy.com/ ）：免月费、按成交抽成；开通→建产品「LineLight Reader Pro ¥49」→ 开启 license key（许可码）发放。
-- 许可码即「签名码」：开发者用 Ed25519 私钥离线签发（脚本在本地 CI/个人机），公钥烧进扩展。Lemon Squeezy 负责收款与把码发邮件给用户，扩展不联网。
+- 许可码即「签名码」：开发者用 **ECDSA P-256（ES256）私钥**离线签发（脚本在本地 CI/个人机），公钥烧进扩展。选 P-256 因三店 WebCrypto 全版本稳定（Ed25519 需 Chrome 137+，见 architect §4.2）。Lemon Squeezy 负责收款与把码发邮件给用户，扩展不联网。
 - 用户在扩展 options 页输入许可码 → WebCrypto 验签 → 解锁档位。换机手动重输。
 - 降级：若某商店拒外链支付，该商店版本整体免费或延后变现（见 architect §4.4）。
 
