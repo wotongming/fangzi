@@ -73,6 +73,17 @@ export function buildDashboard(invoices: Invoice[], today: string): Dashboard {
   }
 }
 
+/**
+ * 未结清账款的状态展示文案：逾期>0 红色「逾期 N 天」；
+ * days<=0 未到期，中性「未到期（M 天后到期）」，绝不出现负逾期。
+ */
+export function statusLabel(days: number): { text: string; tone: 'overdue' | 'dueSoon' | 'ok' } {
+  if (days > 0) return { text: `逾期 ${days} 天`, tone: 'overdue' }
+  const remain = -days
+  if (remain === 0) return { text: '今天到期', tone: 'dueSoon' }
+  return { text: `未到期（${remain} 天后到期）`, tone: 'dueSoon' }
+}
+
 /** 分 → 展示元字符串（¥1,234.56）。 */
 export function centsToYuan(cents: number): string {
   const sign = cents < 0 ? '-' : ''

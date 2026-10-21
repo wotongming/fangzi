@@ -6,7 +6,8 @@ import {
   centsToYuan,
   daysOverdue,
   fillTemplate,
-  stageOf
+  stageOf,
+  statusLabel
 } from '../src/tools/payment-chaser/lib/aging.ts'
 import { renderLetter } from '../src/tools/payment-chaser/lib/templates.ts'
 import type { Invoice } from '../src/tools/payment-chaser/lib/models.ts'
@@ -92,4 +93,21 @@ test('renderLetter：三档标题与客户/金额/天数填入', () => {
   assert.ok(l3.includes('李总'))
   assert.ok(l3.includes('¥3,000.00'))
   assert.ok(l3.includes('45'))
+})
+
+test('statusLabel: 逾期>0 显示逾期 N 天', () => {
+  assert.deepStrictEqual(statusLabel(45), { text: '逾期 45 天', tone: 'overdue' })
+  assert.deepStrictEqual(statusLabel(1), { text: '逾期 1 天', tone: 'overdue' })
+})
+
+test('statusLabel: 未到期不出现负逾期', () => {
+  assert.deepStrictEqual(statusLabel(-10), { text: '未到期（10 天后到期）', tone: 'dueSoon' })
+  assert.deepStrictEqual(statusLabel(0), { text: '今天到期', tone: 'dueSoon' })
+})
+
+test('renderLetter: 未到期单用友好提醒而非催告', () => {
+  const out = renderLetter(3, { client: '张老师', project: '海报', amount: '¥3,000.00', dueDate: '2026-11-01', days: -10 })
+  assert.ok(!out.includes('逾期'))
+  assert.ok(out.includes('到期前友好提醒'))
+  assert.ok(out.includes('10 天'))
 })

@@ -7,7 +7,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useToolBilling } from '@/composables/useToolBilling'
 import { useSeo } from '@/composables/useSeo'
 import { manifest, FREE_INVOICE_LIMIT } from './manifest'
-import { buildDashboard, centsToYuan, daysOverdue, stageOf } from './lib/aging'
+import { buildDashboard, centsToYuan, daysOverdue, stageOf, statusLabel } from './lib/aging'
 import { renderLetter } from './lib/templates'
 import { buildEvidencePdf, download, toCsv, toJson } from './lib/evidence'
 import { deleteInvoice, listInvoices, newId, putInvoice } from './lib/store'
@@ -223,7 +223,7 @@ const METHOD_LABELS = ['微信', '电话', '邮件', '面访', '其他'] as cons
             <div class="li-meta">
               {{ centsToYuan(inv.amountCents) }}｜应付 {{ inv.dueDate }}｜
               <b v-if="inv.paid">已结清</b>
-              <b v-else class="danger">逾期 {{ Math.max(daysOverdue(inv, todayStr), 0) }} 天</b>
+              <b v-else :class="statusLabel(daysOverdue(inv, todayStr)).tone === 'overdue' ? 'danger' : 'muted'">{{ statusLabel(daysOverdue(inv, todayStr)).text }}</b>
               ｜催收 {{ inv.timeline.length }} 次
             </div>
             <div v-if="inv.note" class="li-note">备注：{{ inv.note }}</div>
@@ -300,6 +300,7 @@ h3 { font-size: 14px; margin: 14px 0 6px; }
 .li-title { font-weight: 600; }
 .li-meta { font-size: 13px; color: #6b7280; margin-top: 2px; }
 .danger { color: #b91c1c; }
+.muted { color: #1d4ed8; font-weight: 500; }
 .li-note { font-size: 12px; color: #9ca3af; margin-top: 2px; }
 .li-btns { display: flex; flex-direction: column; gap: 6px; }
 .li-btns .ghost { color: #6b7280; }

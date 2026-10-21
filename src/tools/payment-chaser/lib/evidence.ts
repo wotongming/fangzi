@@ -4,7 +4,7 @@
  *  - CSV / JSON：结构化数据导出（含金额/客户/时间线，可程序校验）。
  */
 import { PDFDocument } from 'pdf-lib'
-import { centsToYuan, daysOverdue } from './aging'
+import { centsToYuan, daysOverdue, statusLabel } from './aging'
 import type { Invoice } from './models'
 
 const PAGE_W = 595.28 // A4 pt
@@ -75,9 +75,10 @@ async function renderReportPage(invoices: Invoice[], title: string): Promise<Blo
   for (const inv of invoices) {
     const days = daysOverdue(inv, todayStr())
     ctx.font = `bold ${12 * SCALE}px "PingFang SC", "Microsoft YaHei", sans-serif`
-    ctx.fillStyle = inv.paid ? '#6b7280' : '#b91c1c'
+    const status = inv.paid ? '已结清' : statusLabel(days).text
+    ctx.fillStyle = inv.paid ? '#6b7280' : days > 0 ? '#b91c1c' : '#1d4ed8'
     ctx.fillText(
-      `${inv.clientName}｜${inv.projectName}｜${centsToYuan(inv.amountCents)}｜应付 ${inv.dueDate}｜${inv.paid ? '已结清' : `逾期 ${days} 天`}`,
+      `${inv.clientName}｜${inv.projectName}｜${centsToYuan(inv.amountCents)}｜应付 ${inv.dueDate}｜${status}`,
       pad,
       y
     )

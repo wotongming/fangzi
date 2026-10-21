@@ -31,7 +31,14 @@ export const LETTER_TEMPLATES: LetterTemplate[] = [
   }
 ]
 
+const PRE_DUE_TITLE = '到期前友好提醒'
+const PRE_DUE_BODY = `{{client}}你好，\n\n「{{project}}」项目的款项 {{amount}} 按约定将在 {{dueDate}}（还有 {{days}} 天）到期。提前跟你对一下，方便你这边安排付款流程、预留时间；如需要我补发票或收据，随时说。\n\n到期后我会再来确认一次到账，谢谢配合。`
+
 export function renderLetter(stage: 1 | 2 | 3, vars: TemplateVars): string {
+  // 未到期（days<=0）不套用催告口吻，改为到期前友好提醒
+  if (vars.days <= 0) {
+    return `【${PRE_DUE_TITLE}】\n\n${fillTemplate(PRE_DUE_BODY, { ...vars, days: -vars.days })}`
+  }
   const t = LETTER_TEMPLATES.find((x) => x.stage === stage)!
   return `【${t.title}】\n\n${fillTemplate(t.body, vars)}`
 }
