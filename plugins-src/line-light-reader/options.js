@@ -17,10 +17,13 @@ function render(list) {
 function download(name, text, type) {
   const blob = new Blob([text], { type })
   const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
+  const url = URL.createObjectURL(blob)
+  a.href = url
   a.download = name
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(a.href)
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 load().then(({ llr_excerpts, llr_settings, llr_code }) => {

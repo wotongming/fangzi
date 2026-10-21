@@ -3,7 +3,7 @@
   "name": "行光阅读器 LineLight Reader",
   "short_name": "行光阅读",
   "version": "0.1.0",
-  "description": "专注阅读：逐行冷暖引导色、焦点行高亮、纯净去广告、本地 TTS 逐句朗读、摘录导出。仅在点图标时对当前页注入，不后台采集。",
+  "description": "专注阅读：逐行冷暖文字引导色、焦点行高亮、Readability 纯净去广告、OpenDyslexic 字体、本地 TTS 逐句朗读与摘录导出。仅在点图标时对当前页注入，不后台采集。",
   "default_locale": "zh_CN",
   "minimum_chrome_version": "102",
   "permissions": ["activeTab", "storage", "scripting"],
@@ -22,5 +22,11 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["fonts/OpenDyslexic-400.woff2", "fonts/OpenDyslexic-700.woff2"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
