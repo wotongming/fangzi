@@ -30,3 +30,8 @@ dist ~133M/163 文件；新增最大静态 pdf.worker.mjs 1.37MB；最大单文�
 
 ## 踩坑
 pdf-lib setKeywords 收 string[]、无 getInfo()、setCreationDate 需 Date；vue 模板里普通 let draft 会被 vue-tsc 收窄成 never，须用 ref。
+
+## 2026-10-21 热修：华为/WeLink WebView 选 PDF "无反应"
+- 根因：accept=application/pdf,.pdf 在华为/WeLink 内置 WebView 下，系统"文件"provider 给的 File.type 为空或 octet-stream，pdf.js 解析失败被 catch 吞成一句"打开失败"，第三方"选择文件"路径异常时 change 静默。
+- 改法：接入公共 `reusable-module/file-sniff`，不信 file.type，按 `%PDF` 魔数校验；错误带文件名/实际 type/大小/三态（空/HTML 错误页/非 PDF）；用户取消选择静默，input.value='' 允许重选。
+- 验证：三视口 E2E（scripts/e2e-mobile-compat-20261021.mjs）投伪 MIME octet-stream 合法 PDF 断言能加载、投 HTML 错误页断言明确文案；npm test 469 全绿。
