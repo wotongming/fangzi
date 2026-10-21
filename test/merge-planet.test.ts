@@ -36,6 +36,7 @@ import {
 } from '../src/tools/mini-games/gpu-games/merge-planet/game/logic.ts'
 import {
   SAVE_KEY,
+  AUTO_SAVE_KEY,
   SAVE_VERSION,
   CHAIN_ID,
   serializeSave,
@@ -534,4 +535,57 @@ test('存档④时间格式化 MM-DD HH:mm；无存档/非法时间返回空串�
   assert.equal(formatSaveTime(0), '')
   assert.equal(SAVE_VERSION, 1)
   assert.equal(CHAIN_ID, 'merge-planet:tiers:19:v1')
+})
+
+test('自动快照：独立键 + maxReached 往返 + 与手动存档互不覆盖', () => {
+  const st: StorageLike = { store: new Map(),
+    getItem(k: string) { return this.store.get(k) ?? null },
+    setItem(k: string, v: string) { this.store.set(k, v) },
+    removeItem(k: string) { this.store.delete(k) } }
+  // 手动档先写一个
+  const manual = serializeSave({ score: 12, combo: 2, currentTier: 3, maxReached: 5, balls: [{ tier: 3, x: 100, y: 200, angle: 0, vx: 0, vy: 0, av: 0 }] })
+  persistSave(manual, SAVE_KEY, st)
+  // 自动快照写另一个局面
+  const auto = serializeSave({ score: 99, combo: 1, currentTier: 7, maxReached: 11, balls: [{ tier: 7, x: 300, y: 400, angle: 0, vx: 0.1, vy: -0.2, av: 0 }] })
+  persistSave(auto, AUTO_SAVE_KEY, st)
+  // 两键并存
+  assert.ok(readSaveRaw(SAVE_KEY, st))
+  assert.ok(readSaveRaw(AUTO_SAVE_KEY, st))
+  // 自动快照往返字段完整（含 maxReached）
+  const back = loadSave(AUTO_SAVE_KEY, TIER_COUNT, SAVE_BOUNDS, st)
+  assert.ok(back)
+  assert.equal(back!.score, 99)
+  assert.equal(back!.currentTier, 7)
+  assert.equal(back!.maxReached, 11)
+  assert.equal(back!.balls.length, 1)
+  assert.equal(back!.balls[0]!.tier, 7)
+  // 手动档未被自动快照污染
+  const m = loadSave(SAVE_KEY, TIER_COUNT, SAVE_BOUNDS, st)
+  assert.equal(m!.score, 12)
+  assert.equal(m!.maxReached, 5)
+  // 清自动快照不动手动档
+  clearSave(AUTO_SAVE_KEY, st)
+  assert.equal(loadSave(AUTO_SAVE_KEY, TIER_COUNT, SAVE_BOUNDS, st), null)
+  assert.ok(loadSave(SAVE_KEY, TIER_COUNT, SAVE_BOUNDS, st))
+})
+
+test('自动快照：maxReached 缺省/越界安全归正，损坏 JSON 当无快照', () => {
+  const st: StorageLike = { store: new Map(),
+    getItem(k: string) { return this.store.get(k) ?? null },
+    setItem(k: string, v: string) { this.store.set(k, v) },
+    removeItem(k: string) { this.store.delete(k) } }
+  // 旧档无 maxReached 字段 → 兜底取 currentTier
+  const legacy = serializeSave({ score: 5, combo: 1, currentTier: 4, balls: [] })
+  const stripped = { ...legacy } as Record<string, unknown>
+  delete stripped.maxReached
+  persistSave(stripped as never, AUTO_SAVE_KEY, st)
+  const back = loadSave(AUTO_SAVE_KEY, TIER_COUNT, SAVE_BOUNDS, st)
+  assert.equal(back!.maxReached, 4)
+  // 越界 maxReached → 兜底取 currentTier(4)，不崩
+  st.setItem(AUTO_SAVE_KEY, JSON.stringify({ ...legacy, maxReached: 999 }))
+  const bad = loadSave(AUTO_SAVE_KEY, TIER_COUNT, SAVE_BOUNDS, st)
+  assert.equal(bad!.maxReached, 4)
+  // 损坏 JSON → null
+  st.setItem(AUTO_SAVE_KEY, '{{oops')
+  assert.equal(loadSave(AUTO_SAVE_KEY, TIER_COUNT, SAVE_BOUNDS, st), null)
 })

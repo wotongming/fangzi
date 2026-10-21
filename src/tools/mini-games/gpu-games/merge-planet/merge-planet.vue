@@ -33,11 +33,13 @@ import {
 import { makeStarfield, drawSpaceBackground, paintPlanet, hash01, type Star } from './game/render'
 import {
   SAVE_KEY,
+  AUTO_SAVE_KEY,
   serializeSave,
   persistSave,
   loadSave,
   readSaveRaw,
   readSaveMeta,
+  clearSave,
   formatSaveTime,
   type SavePayload,
   type SaveBounds
@@ -146,7 +148,7 @@ function saveGame(): { ok: boolean; covered: boolean; label: string } {
     av: p.body.angularVelocity
   }))
   const covered = !!readSaveRaw(SAVE_KEY)
-  const payload = serializeSave({ score: score.value, combo: combo.value, currentTier, balls })
+  const payload = serializeSave({ score: score.value, combo: combo.value, currentTier, maxReached, balls })
   const ok = persistSave(payload, SAVE_KEY)
   if (ok) {
     showSaveMsg(`已${covered ? '覆盖旧' : '新'}存档 · ${formatSaveTime(payload.savedAt)}`)
@@ -184,8 +186,8 @@ function restoreFromSave(p: SavePayload): void {
     Matter.Body.setVelocity(sp.body, { x: b.vx, y: b.vy })
     Matter.Body.setAngularVelocity(sp.body, b.av)
   }
-  // 续玩恢复进度：maxReached 取场上球与待投球最高 tier（旧档球级经 save.ts 校验在 0..18，安全归正不崩）
-  maxReached = Math.max(0, p.currentTier, ...p.balls.map((b) => b.tier))
+  // 续玩恢复进度：maxReached 优先用存档字段，兜底取场上球与待投球最高 tier
+  maxReached = Math.max(p.maxReached ?? 0, p.currentTier, ...p.balls.map((b) => b.tier))
   // 恢复：可立即投放、连击窗口未触发、死亡线归零、回到进行态
   overline = createOverline()
   overNotified = false
@@ -208,6 +210,59 @@ function loadGame(): boolean {
   restoreFromSave(p)
   showSaveMsg(`已读取存档 · ${formatSaveTime(p.savedAt)}`)
   return true
+}
+
+// —— 自动快照（切后台/页面回收续玩；独立键，绝不覆盖手动存档）——
+/** 重挂载时是否弹「继续上一局 / 开始新局」入口。 */
+const showAutoResume = ref(false)
+
+function autoSaveNow(): void {
+  if (phase.value !== 'play') return
+  const balls = [...planets.values()].map((p) => ({
+    tier: p.tier,
+    x: p.body.position.x,
+    y: p.body.position.y,
+    angle: p.body.angle,
+    vx: p.body.velocity.x,
+    vy: p.body.velocity.y,
+    av: p.body.angularVelocity
+  }))
+  // 空局面（还没投过球）不写快照，避免重载弹一个空局入口
+  if (!balls.length) return
+  const payload = serializeSave({ score: score.value, combo: combo.value, currentTier, maxReached, balls })
+  persistSave(payload, AUTO_SAVE_KEY)
+}
+
+function clearAutoSave(): void {
+  clearSave(AUTO_SAVE_KEY)
+}
+
+function hasAutoSave(): boolean {
+  return !!readSaveRaw(AUTO_SAVE_KEY)
+}
+
+/** 弹层「继续上一局」：读自动快照并恢复；失败则清掉并开新局。 */
+function resumeAutoSave(): void {
+  const p = loadSave(AUTO_SAVE_KEY, TIER_COUNT, saveBounds())
+  showAutoResume.value = false
+  if (!p) {
+    clearAutoSave()
+    reset()
+    return
+  }
+  restoreFromSave(p)
+  showSaveMsg('已恢复上次对局')
+}
+
+/** 弹层「开始新局」：丢弃自动快照，重开。 */
+function discardAutoSave(): void {
+  clearAutoSave()
+  showAutoResume.value = false
+  reset()
+}
+
+function onVisibilityOrHide(): void {
+  if (document.hidden) autoSaveNow()
 }
 
 // —— 表现层 ——
@@ -354,6 +409,7 @@ function burst(x: number, y: number, tier: number, combo: number): void {
 function onWin(x: number, y: number): void {
   phase.value = 'win'
   overNotified = true
+  clearAutoSave()
   for (let k = 0; k < 6; k++) burst(x, y, FINAL_TIER, 5)
   shakeMag = 18
   audio.explode(5)
@@ -367,6 +423,7 @@ function onLose(): void {
   if (overNotified) return
   overNotified = true
   phase.value = 'lose'
+  clearAutoSave()
   shakeMag = 10
   audio.explode(2)
   haptic([18, 40], props.vibrate)
@@ -697,6 +754,7 @@ function reset(): void {
   syncQueueLabels()
   emit('score', 0)
   emit('combo', 0)
+  clearAutoSave()
 }
 
 // —— E2E/调试接缝：window.__mergePlanet（不暴露任何 UI，仅供自动化确定性校验）——
@@ -744,7 +802,12 @@ function exposeDebug(): void {
     toggleGravity,
     currentTier: () => currentTier,
     boardCount: () => planets.size,
-    boardTiers: () => [...planets.values()].map((p) => p.tier).sort((a, b) => a - b)
+    boardTiers: () => [...planets.values()].map((p) => p.tier).sort((a, b) => a - b),
+    // 自动快照测试接缝
+    autoSaveNow,
+    clearAutoSave,
+    hasAutoSave,
+    showAutoResume: () => showAutoResume.value
   }
 }
 
@@ -820,6 +883,12 @@ watch(
   }
 )
 
+// 切后台/页面回收：写自动快照（页面可能被系统直接杀掉，hidden/pagehide 尽量触发）
+let autoSaveTimer: ReturnType<typeof setInterval> | null = null
+function onPageHide(): void {
+  autoSaveNow()
+}
+
 onMounted(() => {
   buildWorld()
   currentTier = rollSpawnTier(maxReached)
@@ -827,7 +896,8 @@ onMounted(() => {
   resize()
   aimX = W / 2
   exposeDebug()
-  // 选卡「继续游戏」进入：自动读取单槽存档续玩（无效/损坏安全回退新开局）
+  // 重挂载：若存在未完成的自动快照，弹「继续上一局 / 开始新局」（手动选卡 resume 直接读档、不弹）
+  if (!props.resume && hasAutoSave()) showAutoResume.value = true
   if (props.resume) loadGame()
   styleHostHud()
   autoAttachSensor()
@@ -835,6 +905,10 @@ onMounted(() => {
   if (rootEl.value) ro.observe(rootEl.value)
   window.addEventListener('keydown', onKey)
   window.addEventListener('keyup', onKeyUp)
+  document.addEventListener('visibilitychange', onVisibilityOrHide)
+  window.addEventListener('pagehide', onPageHide)
+  // 进行中每 15s 节流快照，兜底系统回收未触发 hidden/pagehide 的场景
+  autoSaveTimer = setInterval(autoSaveNow, 15000)
   raf = requestAnimationFrame(loop)
 })
 
@@ -852,10 +926,13 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(raf)
   if (comboTimer) clearTimeout(comboTimer)
   if (saveMsgTimer) clearTimeout(saveMsgTimer)
+  if (autoSaveTimer) clearInterval(autoSaveTimer)
   ro?.disconnect()
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('keyup', onKeyUp)
   window.removeEventListener('deviceorientation', onOrientation)
+  document.removeEventListener('visibilitychange', onVisibilityOrHide)
+  window.removeEventListener('pagehide', onPageHide)
   restoreHostHud()
   if (engine) {
     Matter.Engine.clear(engine)
@@ -890,6 +967,16 @@ onBeforeUnmount(() => {
     <transition name="mp-toast">
       <div v-if="saveMsg" class="mp-toast">{{ saveMsg }}</div>
     </transition>
+
+    <!-- 自动快照恢复入口：切后台/页面回收后重挂载时询问 -->
+    <div v-if="showAutoResume" class="mp-result">
+      <div class="mp-card">
+        <div class="mp-title">检测到未完成对局</div>
+        <p class="mp-sub">上次切出时已自动保存进度，要继续吗？</p>
+        <button type="button" class="mp-btn" @click="resumeAutoSave">▶ 继续上一局</button>
+        <button type="button" class="mp-btn mp-btn-ghost" @click="discardAutoSave">开始新局</button>
+      </div>
+    </div>
 
     <!-- 结算 -->
     <div v-if="phase !== 'play'" class="mp-result">
@@ -1031,5 +1118,14 @@ onBeforeUnmount(() => {
   background: linear-gradient(90deg, #37e0ff, #8a5cff);
   box-shadow: 0 6px 22px rgba(90, 120, 255, 0.5);
   cursor: pointer;
+}
+.mp-btn + .mp-btn {
+  margin-left: 10px;
+}
+.mp-btn-ghost {
+  background: transparent;
+  color: #cfe0ff;
+  border: 1px solid rgba(150, 190, 255, 0.4);
+  box-shadow: none;
 }
 </style>

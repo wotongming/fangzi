@@ -12,6 +12,8 @@
 
 /** localStorage key（与最高分 key 并列、互不影响）。 */
 export const SAVE_KEY = 'fangzi:merge-planet:save:v1'
+/** 切后台/进程回收自动快照键（与手动存档 SAVE_KEY 分键，互不覆盖）。 */
+export const AUTO_SAVE_KEY = 'fangzi:merge-planet:auto-save:v1'
 /** 存档结构版本。 */
 export const SAVE_VERSION = 1
 /** 进化表标识：链条/规模变化后改动它，旧档因标识不符被安全忽略。 */
@@ -41,6 +43,8 @@ export interface SavePayload {
   combo: number
   /** 顶部当前待投球 tier；未来投放照常随机，只存当前待投。 */
   currentTier: number
+  /** 本场所合成到的最高 tier（驱动动态投放池上沿）。 */
+  maxReached: number
   balls: SavedBall[]
 }
 
@@ -49,6 +53,7 @@ export interface SerializeInput {
   score: number
   combo: number
   currentTier: number
+  maxReached?: number
   balls: SavedBall[]
 }
 
@@ -91,6 +96,7 @@ export function serializeSave(input: SerializeInput, savedAt: number = Date.now(
     score: isFiniteNum(input.score) && input.score >= 0 ? Math.floor(input.score) : 0,
     combo: isFiniteNum(input.combo) && input.combo >= 1 ? Math.floor(input.combo) : 1,
     currentTier: Number.isInteger(input.currentTier) ? Math.floor(input.currentTier) : 0,
+    maxReached: Number.isInteger(input.maxReached) ? Math.floor(input.maxReached as number) : 0,
     balls
   }
 }
@@ -128,6 +134,10 @@ export function validateSave(raw: unknown, tierCount: number, bounds: SaveBounds
     Number.isInteger(r.currentTier) && (r.currentTier as number) >= 0 && (r.currentTier as number) < tierCount
       ? Math.floor(r.currentTier as number)
       : 0
+  const maxReached =
+    Number.isInteger(r.maxReached) && (r.maxReached as number) >= 0 && (r.maxReached as number) < tierCount
+      ? Math.floor(r.maxReached as number)
+      : Math.max(0, currentTier)
 
   let dropped = 0
   const balls: SavedBall[] = []
@@ -163,6 +173,7 @@ export function validateSave(raw: unknown, tierCount: number, bounds: SaveBounds
       score,
       combo,
       currentTier,
+      maxReached,
       balls
     }
   }

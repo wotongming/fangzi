@@ -65,6 +65,12 @@ function onVisibilityForWake(): void {
   if (!document.hidden && !props.paused) void acquireWakeLock()
 }
 
+// 切后台自动暂停：仅在游戏进行中（未暂停）时把对局挂起，回前台保持暂停由用户点继续，
+// 不偷跑、不结算后台积压 dt。回前台 visible 不自动恢复（由用户手动继续）。
+function onVisibilityForAutoPause(): void {
+  if (document.hidden && !props.paused) emit('update:paused', true)
+}
+
 const PARTICLE_LABEL: Record<'auto' | 'high' | 'low', string> = {
   auto: '自动',
   high: '高（更炫）',
@@ -126,6 +132,7 @@ onMounted(() => {
   if (!imm.active.value) void imm.enter()
   void acquireWakeLock()
   document.addEventListener('visibilitychange', onVisibilityForWake)
+  document.addEventListener('visibilitychange', onVisibilityForAutoPause)
 })
 
 // 用户按 Esc / 系统手势退出系统全屏时，应用沉浸态会被置 false；联动退出专注态。
@@ -147,6 +154,7 @@ watch(
 onBeforeUnmount(() => {
   if (hideTimer) clearTimeout(hideTimer)
   document.removeEventListener('visibilitychange', onVisibilityForWake)
+  document.removeEventListener('visibilitychange', onVisibilityForAutoPause)
   releaseWakeLock()
   if (imm.active.value) void imm.exit()
 })
