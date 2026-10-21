@@ -10,6 +10,7 @@ import { useToolBilling } from '@/composables/useToolBilling'
 import { useSeo } from '@/composables/useSeo'
 import { inspectPdf, buildRedactedPdf, readMeta, pageText, type PageInfo } from './lib/engine'
 import { clampRectToPage, type Rect } from './lib/geometry'
+import { readPdfFile, FileRejected } from '../../../reusable-module/file-sniff/file-sniff'
 
 useSeo({
   title: 'PDF 真脱敏 - 本地真删文字层+清元数据（不上传）',
@@ -56,15 +57,18 @@ const FREE_MAX_PAGES = 3
 const overFreePages = computed(() => pages.value.length > FREE_MAX_PAGES && !pro.value)
 
 async function onFile(e: Event): Promise<void> {
-  const f = (e.target as HTMLInputElement).files?.[0]
-  if (!f) return
+  const el = e.target as HTMLInputElement
+  const f = el.files?.[0]
+  if (!f) return // 用户取消选择：静默，不报错
   await loadFile(f)
+  el.value = '' // 允许再次选同一文件
 }
 
 async function loadFile(f: File): Promise<void> {
   loading.value = true
   try {
-    const buf = await f.arrayBuffer()
+    // 不信 file.type（安卓各 provider 常给 ""/octet-stream），按魔数 %PDF 校验
+    const buf = await readPdfFile(f)
     const info = await inspectPdf(buf)
     origBuf.value = buf
     fileName.value = f.name
@@ -76,7 +80,8 @@ async function loadFile(f: File): Promise<void> {
     notify(`已载入 ${f.name}（${info.numPages} 页）`)
     requestAnimationFrame(() => void renderPreview())
   } catch (err) {
-    notify('打开失败：请确认是有效 PDF')
+    const msg = err instanceof FileRejected ? err.message : `打开失败：${(err as Error).message}（${f.name}）`
+    notify(msg)
   } finally {
     loading.value = false
   }
