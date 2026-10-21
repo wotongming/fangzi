@@ -10,6 +10,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import mammoth from 'mammoth/mammoth.browser'
 import { splitParagraphs } from './normalize'
 import type { ParsedText } from './types'
+import { sniffFile } from '../../../../reusable-module/file-sniff/file-sniff'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -50,11 +51,17 @@ export async function parseResumeFile(file: File): Promise<ParsedText> {
   if (file.size > MAX_BYTES) {
     throw new Error(`文件过大（>${Math.round(MAX_BYTES / 1024 / 1024)}MB），请使用文字精简版简历。`)
   }
+  if (file.size === 0) throw new Error(`文件是空的（0 字节）：${file.name}`)
+  // 安卓各文件 provider 的 File.type/扩展名不可信：读前若干字节嗅探真实类型
+  const head = await file.slice(0, 512).arrayBuffer()
+  const { kind } = sniffFile(head, file.name)
   const name = file.name.toLowerCase()
-  if (name.endsWith('.pdf')) return parsePdf(file)
+  if (kind === 'pdf' || name.endsWith('.pdf')) return parsePdf(file)
+  if (kind === 'unknown' && (kind as string) === 'unknown' && (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || name.endsWith('.docx'))) return parseDocx(file)
   if (name.endsWith('.docx')) return parseDocx(file)
-  if (name.endsWith('.txt') || name.endsWith('.md')) {
+  if (kind === 'html') throw new Error('这不是简历文件，而是一个网页/错误页（可能是导出失败），请重新导出后再上传。')
+  if (name.endsWith('.txt') || name.endsWith('.md') || file.type.startsWith('text/')) {
     return parsePlainText(await file.text())
   }
-  throw new Error('暂不支持该文件格式，请上传 PDF / DOCX / TXT，或直接把简历内容粘贴到文本框。')
+  throw new Error(`暂不支持该文件（实际类型=${file.type || '未知'}，${(file.size / 1024).toFixed(0)}KB）：${file.name}。请上传 PDF / DOCX / TXT，或直接把简历内容粘贴到文本框。`)
 }
