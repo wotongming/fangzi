@@ -7,15 +7,14 @@
  *    再整页作为 JPEG 图像嵌回——该页文字层随光栅化被彻底删除（getTextContent 再提取不到），
  *    这是"真删"而非"画黑框"。代价：含遮罩页变为图像、不可再选中该页文字（已在 UI 与文档明示）。
  *
- * worker/wasm 全部 Vite 打包后同源自托管（?url），禁止外链 CDN，保证离线可跑。
+ * worker 固化为同源稳定路径 `/pdfjs/pdf.worker.min.js`（公共模块 reusable-module/pdfjs-worker），
+ * 禁止外链 CDN，保证离线可跑；worker 加载失败归一为中文可重试提示。
  */
-import * as pdfjsLib from 'pdfjs-dist'
-// Vite 把 worker 打成同源静态资源，离线可用（与 resume-jd-matcher 同一范式）
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { PDFDocument } from 'pdf-lib'
+import { openPdfDocument, configurePdfjs } from '../../../../reusable-module/pdfjs-worker/pdfjs-worker'
 import { clampRectToPage, scrubMetadata, type Rect } from './geometry'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
+configurePdfjs()
 
 export interface PageInfo {
   index: number
@@ -23,18 +22,14 @@ export interface PageInfo {
   height: number
 }
 
-let pdfjsReady = false
 async function ensurePdfjs(): Promise<void> {
-  if (!pdfjsReady) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
-    pdfjsReady = true
-  }
+  configurePdfjs()
 }
 
 /** 打开 PDF（不保留原 buffer 引用之外的上传），返回页数与每页尺寸（pt）。 */
 export async function inspectPdf(data: ArrayBuffer): Promise<{ numPages: number; pages: PageInfo[] }> {
   await ensurePdfjs()
-  const pdf = await pdfjsLib.getDocument({ data: data.slice(0) }).promise
+  const pdf = await openPdfDocument(data)
   const pages: PageInfo[] = []
   for (let i = 1; i <= pdf.numPages; i++) {
     const p = await pdf.getPage(i)
@@ -68,7 +63,7 @@ export async function buildRedactedPdf(
   await ensurePdfjs()
 
   // 1) pdf.js：渲染含遮罩页为位图并涂黑块
-  const pdf = await pdfjsLib.getDocument({ data: originalBytes.slice(0) }).promise
+  const pdf = await openPdfDocument(originalBytes)
   const rasterImages = new Map<number, { blob: Blob; w: number; h: number }>()
   const scale = dpi / 72
   for (const [pageIdx, masks] of masksByPage) {
@@ -142,7 +137,7 @@ export async function buildRedactedPdf(
 /** 提取某页全部文本（用于"真删"断言：遮罩页不应再提取到被删文字）。 */
 export async function pageText(buf: ArrayBuffer, pageIdx: number): Promise<string> {
   await ensurePdfjs()
-  const pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise
+  const pdf = await openPdfDocument(buf)
   const p = await pdf.getPage(pageIdx + 1)
   const tc = await p.getTextContent()
   const s = tc.items.map((it) => ('str' in it ? it.str : '')).join(' ')

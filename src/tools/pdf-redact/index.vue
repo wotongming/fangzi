@@ -11,6 +11,7 @@ import { useSeo } from '@/composables/useSeo'
 import { inspectPdf, buildRedactedPdf, readMeta, pageText, type PageInfo } from './lib/engine'
 import { clampRectToPage, type Rect } from './lib/geometry'
 import { readPdfFile, FileRejected } from '../../../reusable-module/file-sniff/file-sniff'
+import { openPdfDocument } from '../../../reusable-module/pdfjs-worker/pdfjs-worker'
 
 useSeo({
   title: 'PDF 真脱敏 - 本地真删文字层+清元数据（不上传）',
@@ -35,12 +36,18 @@ async function unlock(): Promise<void> {
 }
 
 const toast = ref('')
+const err = ref('')
 function notify(msg: string): void {
   toast.value = msg
   window.setTimeout(() => { if (toast.value === msg) toast.value = '' }, 2600)
 }
+function retryPick(): void {
+  err.value = ''
+  file.value?.click()
+}
 
 // ---------- 文件与页面 ----------
+const file = ref<HTMLInputElement | null>(null)
 const fileName = ref('')
 const origBuf = ref<ArrayBuffer | null>(null)
 const pages = ref<PageInfo[]>([])
@@ -66,6 +73,7 @@ async function onFile(e: Event): Promise<void> {
 
 async function loadFile(f: File): Promise<void> {
   loading.value = true
+  err.value = ''
   try {
     // 不信 file.type（安卓各 provider 常给 ""/octet-stream），按魔数 %PDF 校验
     const buf = await readPdfFile(f)
@@ -79,9 +87,11 @@ async function loadFile(f: File): Promise<void> {
     resultMeta.value = null
     notify(`已载入 ${f.name}（${info.numPages} 页）`)
     requestAnimationFrame(() => void renderPreview())
-  } catch (err) {
-    const msg = err instanceof FileRejected ? err.message : `打开失败：${(err as Error).message}（${f.name}）`
-    notify(msg)
+  } catch (e) {
+    // 解析失败（含 worker 加载失败）持久展示具体原因，提供重试入口，不自动消失
+    err.value = e instanceof FileRejected
+      ? e.message
+      : `打开失败：${(e as Error).message}（${f.name}）`
   } finally {
     loading.value = false
   }
@@ -97,8 +107,7 @@ const curMasks = computed(() => masks.get(cur.value) ?? [])
 
 async function renderPreview(): Promise<void> {
   if (!origBuf.value || !page.value) return
-  const pdfjs = await import('pdfjs-dist')
-  const pdf = await pdfjs.getDocument({ data: origBuf.value.slice(0) }).promise
+  const pdf = await openPdfDocument(origBuf.value)
   const pg = await pdf.getPage(cur.value + 1)
   // 预览宽度自适应容器
   const targetW = Math.min(720, overlay.value?.clientWidth ?? 720)
@@ -242,6 +251,11 @@ onBeforeUnmount(() => { /* pdfjs doc 在 render 后即 destroy */ })
     </div>
     <div v-if="loading" class="pr-drop">读取中…</div>
 
+    <div v-if="err" class="pr-err" role="alert">
+      <p>{{ err }}</p>
+      <button class="pr-btn" @click="retryPick">重试（重新选择 PDF）</button>
+    </div>
+
     <div v-if="pages.length" class="pr-main">
       <div class="pr-toolbar">
         <button class="pr-btn" @click="goto(cur - 1)">‹ 上一页</button>
@@ -298,4 +312,6 @@ onBeforeUnmount(() => { /* pdfjs doc 在 render 后即 destroy */ })
 .pr-buy { color: #1f7a4d; cursor: pointer; text-decoration: underline; }
 .pr-meta { background: #eef7f1; border-radius: 8px; padding: 8px; font-size: 12px; }
 .pr-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: 8px 16px; border-radius: 20px; font-size: 13px; }
+.pr-err { border: 1px solid #f0b9b0; background: #fdf2f1; color: #9a2b20; border-radius: 12px; padding: 14px 16px; margin: 12px 0; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.pr-err p { margin: 0; line-height: 1.6; }
 </style>

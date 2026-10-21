@@ -16,6 +16,11 @@ Mac 预览/系统自带涂黑只是视觉遮罩，文字层仍在，对方另存
 ## 隐私
 无后端、文件不离开设备；导出时 Author/Title/Creator/Producer 等元数据一并清空。
 
+## 常见问题
+**打开 PDF 提示「PDF 解析组件加载失败，可重试」？**
+先点「重试（重新选择 PDF）」；若仍失败，多半是当前在内置浏览器（微信 / WeLink / QQ / 微博等）中打开。请点右上角菜单，**用系统 Chrome / Edge 打开本页**后再选 PDF。文件类型识别只认 `%PDF` 魔数，不受系统「文件类型」为空或 octet-stream 影响。
+
 ## 截图
 - PC 主界面：docs/shots/pr-pc-main.png
 - 手机主界面：docs/shots/pr-mobile-main.png
+- 2026-10-21 worker 热修后手机实测：docs/shots/pr-pdfjs-worker-fix-mobile.png

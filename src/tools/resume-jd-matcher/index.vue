@@ -64,6 +64,7 @@ const resumeVersions = ref<ResumeVersion[]>([])
 const activeResume = ref<ResumeVersion | null>(null)
 const parseErr = ref('')
 const parseBusy = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
 const resumeParagraphs = computed(() => parsePlainText(resumeText.value).paragraphs)
 
 async function onFile(e: Event) {
@@ -82,6 +83,11 @@ async function onFile(e: Event) {
     parseBusy.value = false
     input.value = ''
   }
+}
+
+function retryPick(): void {
+  parseErr.value = ''
+  fileInput.value?.click()
 }
 
 async function persistResume() {
@@ -256,12 +262,15 @@ onMounted(async () => {
       <div class="row">
         <label class="file-btn">
           导入 PDF / Word / TXT
-          <input type="file" accept=".pdf,.docx,.txt,.md" hidden @change="onFile" :disabled="parseBusy" />
+          <input ref="fileInput" type="file" accept=".pdf,.docx,.txt,.md" hidden @change="onFile" :disabled="parseBusy" />
         </label>
         <span v-if="parseBusy" class="muted">解析中…</span>
         <button class="btn-primary" @click="persistResume" :disabled="!resumeText.trim()">保存为简历版本</button>
       </div>
-      <p v-if="parseErr" class="err">{{ parseErr }}</p>
+      <div v-if="parseErr" class="err" role="alert">
+        <p>{{ parseErr }}</p>
+        <button class="btn-ghost" @click="retryPick">重试（重新选择文件）</button>
+      </div>
       <textarea v-model="resumeText" class="big-input" rows="14" placeholder="也可以直接把简历全文粘贴到这里（建议包含教育经历、工作年限、城市、技能与项目经历）"></textarea>
       <p v-if="resumeSkillPreview.length" class="muted small">识别到的技能：{{ resumeSkillPreview.join('、') }}</p>
 
@@ -439,7 +448,8 @@ h4 { margin: 14px 0 8px; }
 .btn-primary:disabled { opacity: .6; cursor: default; }
 .btn-ghost { background: #fff; border: 1px solid #cfd6d2; padding: 8px 16px; border-radius: 10px; cursor: pointer; }
 .big { padding: 11px 26px; font-size: 15px; }
-.err { color: #c0392b; background: #fdecea; border-radius: 8px; padding: 8px 10px; }
+.err { color: #c0392b; background: #fdecea; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.err p { margin: 0; line-height: 1.6; }
 .muted { color: #8a8f8c; }
 .small { font-size: 12px; }
 .gate { border: 1px dashed #cfe3d6; background: #f6fbf8; border-radius: 10px; padding: 14px; text-align: center; margin: 10px 0; }

@@ -1,18 +1,16 @@
 /**
  * 简历文件解析为纯文本 + 段落。
- * - PDF：pdfjs-dist（Apache-2.0），worker 走 Vite 打包后的同源 URL，不依赖 CDN；
+ * - PDF：pdfjs-dist（Apache-2.0），worker 走公共模块固化同源 `/pdfjs/pdf.worker.min.js`，不依赖 CDN；
  * - DOCX：mammoth（BSD-2-Clause，可商用）只抽文本，不执行宏/不取样式；
  * - TXT/MD：直接按文本读取；其他类型拒绝并给可操作提示。
  */
-import * as pdfjsLib from 'pdfjs-dist'
-// Vite 会把 worker 当作静态资源产出同源 URL
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import mammoth from 'mammoth/mammoth.browser'
 import { splitParagraphs } from './normalize'
 import type { ParsedText } from './types'
 import { sniffFile } from '../../../../reusable-module/file-sniff/file-sniff'
+import { openPdfDocument, configurePdfjs } from '../../../../reusable-module/pdfjs-worker/pdfjs-worker'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
+configurePdfjs()
 
 const MAX_BYTES = 15 * 1024 * 1024
 
@@ -22,7 +20,7 @@ export function parsePlainText(text: string): ParsedText {
 
 async function parsePdf(file: File): Promise<ParsedText> {
   const buf = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise
+  const pdf = await openPdfDocument(buf)
   const parts: string[] = []
   for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
     const page = await pdf.getPage(pageNo)

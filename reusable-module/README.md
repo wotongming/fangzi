@@ -16,6 +16,7 @@
 | recurring-detect | 周期性交易/订阅识别纯函数：商户名归一 + 金额容差归桶 + 扣费间隔中位数落入月/季/半年/年区间 + 变异系数阈值，输出标准 cadence、次数、年化金额与下次扣费预测 | `recurring-detect/recurring-detect.ts` | 2026-10-17 由账单订阅盘点（pipeline 009）沉淀 |
 | ort-wasm-loader | onnxruntime-web 胶水脚本 MIME 兼容加载：静态托管（EdgeOne）把 `.mjs` 下发成 octet-stream 致动态 import 失败时，fetch 文本→`text/javascript` blob URL→对象形式 wasmPaths，跨域隔离/失败自动回退直链；适配 onnxruntime-web 与 Transformers.js | `ort-wasm-loader/ort-wasm-loader.ts` | 2026-10-18 由本地知识库语义后端热修（pipeline 003）沉淀 |
 | use-pull-to-search | 首页顶部垂直下拉唤起搜索的纯函数判定：顶部+向下+纵向主导才开启、1/4 视口阈值、阻尼视觉位移、达标跳转/否则回弹、防水平误触（零依赖，可单测） | `use-pull-to-search/use-pull-to-search.ts` | 2026-10-20 导航改版沉淀 |
+| pdfjs-worker | pdfjs-dist worker 统一初始化与错误归一化：固化同源稳定 `/pdfjs/pdf.worker.min.js`（绕开 EdgeOne 把 `.mjs` 下发成 octet-stream 的 MIME 坑），幂等配置 workerSrc，`getDocument` 包装后把 worker 加载失败归一为中文可重试提示；pdf-redact / resume-jd-matcher 共用 | `pdfjs-worker/pdfjs-worker.ts` | 2026-10-21 pdf-redact/resume-jd-matcher 真机内置 WebView 共性热修沉淀 |
 
 ## 新增模块规范
 
