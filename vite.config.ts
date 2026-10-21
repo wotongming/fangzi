@@ -43,7 +43,7 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         // 预缓存构建产物与静态应用外壳
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2,json}'],
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png,ico,woff2,json}'],
         // mf 模型文件按需运行时获取（含 40MB onnx），不进安装期预缓存
         globIgnores: ['plugins/**', 'tools-index.json', 'mf/**', 'sw-model-shards.js'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
