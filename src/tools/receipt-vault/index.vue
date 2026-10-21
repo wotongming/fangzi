@@ -9,6 +9,7 @@ import { useSeo } from '@/composables/useSeo'
 import { ocrImage } from './lib/ocr'
 import { parseReceipt, toCsv, summarizeByCategory, type ReceiptRecord } from './lib/extract'
 import { allReceipts, saveReceipt, deleteReceipt } from './lib/store'
+import { readBillFile, toRecords, type BillPreviewRow } from './lib/bill-import'
 
 useSeo({
   title: '小票本 - 本地OCR抽字段/项目挂账/CSV报税导出（不上传）',
@@ -63,10 +64,39 @@ async function onPick(e: Event) {
     draft.tax = p.tax
     notify(p.confidence < 0.5 ? '识别完成，置信度较低，请人工校对' : '识别完成')
   } catch (err) {
-    notify('OCR 失败，请重试（首次需加载语言包）')
+    notify('识别失败：' + (err as Error).message)
   } finally {
     ocrBusy.value = false
   }
+}
+
+// —— 账单文件批量导入（微信/支付宝 xlsx/csv）——
+const billBusy = ref(false)
+const billRows = ref<Array<BillPreviewRow & { checked: boolean }>>([])
+const billCategory = ref('餐饮')
+async function onBillFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const f = input.files?.[0]
+  input.value = ''
+  if (!f) return
+  billBusy.value = true
+  try {
+    const rows = await readBillFile(f)
+    billRows.value = rows.map((r) => ({ ...r, checked: true }))
+    notify(`解析到 ${rows.length} 笔，请勾选后入账`)
+  } catch (err) {
+    notify('账单导入失败：' + (err as Error).message)
+  } finally {
+    billBusy.value = false
+  }
+}
+async function importChecked() {
+  const picked = billRows.value.filter((r) => r.checked)
+  if (!picked.length) { notify('未勾选任何记录'); return }
+  for (const rec of toRecords(picked, billCategory.value)) await saveReceipt(rec)
+  await refresh()
+  billRows.value = []
+  notify(`已入账 ${picked.length} 笔`)
 }
 
 async function saveCurrent() {
@@ -141,6 +171,26 @@ const total = computed(() => records.value.reduce((s, r) => s + (parseFloat(r.am
           <label>备注<input v-model="draft.note" /></label>
         </div>
         <button class="rv-btn primary" :disabled="ocrBusy" @click="saveCurrent">保存记录</button>
+
+        <hr style="margin:14px 0;border:none;border-top:1px dashed #cdd6d0" />
+        <label class="rv-btn">
+          {{ billBusy ? '解析中…' : '导入微信/支付宝账单(xlsx)' }}
+          <input type="file" accept=".xlsx,.xls,.csv" hidden @change="onBillFile" :disabled="billBusy" />
+        </label>
+        <div v-if="billRows.length" class="rv-bill">
+          <div class="rv-row">
+            <b>预览 {{ billRows.filter(r=>r.checked).length }}/{{ billRows.length }} 笔</b>
+            <select v-model="billCategory"><option v-for="c in categories" :key="c" :value="c">{{ c }}</option></select>
+          </div>
+          <ul class="rv-list">
+            <li v-for="(r,i) in billRows" :key="i" class="rv-item">
+              <input type="checkbox" v-model="r.checked" />
+              <div><b>{{ r.merchant }}</b> · {{ r.date }}<div class="rv-meta">{{ r.note }}</div></div>
+              <span :style="{color: r.amount.startsWith('-') ? '#b55' : '#1f7a4d'}">¥{{ r.amount }}</span>
+            </li>
+          </ul>
+          <button class="rv-btn primary" @click="importChecked">入账勾选记录</button>
+        </div>
       </section>
 
       <section class="rv-card">
