@@ -25,11 +25,13 @@ function sampleXlsx() {
 
 const { chromium } = pw
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const SHOTS = join(ROOT, 'src/tools/mini-games/docs/shots')
+const SHOTS_RV = join(ROOT, 'src/tools/receipt-vault/docs/shots')
+const SHOTS_TR = join(ROOT, 'src/tools/local-transcribe/docs/shots')
 const ORIGIN = 'http://localhost:4173'
 const fail = []
 const log = (...a) => console.log('[e2e-compat]', ...a)
-const shot = (page, name) => page.screenshot({ path: join(SHOTS, name) }).then(() => log('shot', name))
+const shot = (page, name, dir = SHOTS_RV) =>
+  page.screenshot({ path: join(dir, name) }).then(() => log('shot', name, '->', dir))
 
 async function newPage(browser, viewport) {
   const ctx = await newCompatContext(browser, viewport)
@@ -112,7 +114,11 @@ async function testReceiptBill(page, label) {
   const preview = await page.locator('.rv-bill').count()
   log(`[${label}] receipt 预览弹层存在=${preview}`)
   if (!preview) fail.push(`${label} receipt xlsx 导入未出现预览勾选`)
-  await shot(page, 'rv-bill-preview.png')
+  // 截弹层主体（两笔明细+勾选+确认按钮），整页兜底
+  const billEl = page.locator('.rv-bill').first()
+  await billEl.scrollIntoViewIfNeeded().catch(() => {})
+  await page.waitForTimeout(300)
+  await billEl.screenshot({ path: join(SHOTS_RV, 'rv-bill-preview.png') }).then(() => log('shot rv-bill-preview.png'))
   await page.locator('.rv-btn.primary', { hasText: '入账' }).click()
   await page.waitForTimeout(800)
   const rows = await page.evaluate(() => window.__receiptVault.all())
@@ -140,7 +146,7 @@ async function testTranscribe(page, label) {
   const body = await page.locator('body').innerText()
   log(`[${label}] transcribe 权限拒后含「权限」? ${body.includes('权限')}`)
   if (!body.includes('权限')) fail.push(`${label} transcribe getUserMedia 拒绝未给权限引导文案`)
-  await shot(page, 'tr-mic-denied.png')
+  await shot(page, 'tr-mic-denied.png', SHOTS_TR)
   await overflow(page, label + '/transcribe')
 }
 
