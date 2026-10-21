@@ -82,6 +82,15 @@ export default defineConfig({
               cacheName: 'fangzi-ai-models',
               expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 90 }
             }
+          },
+          {
+            // 小票本 OCR：自托管 tesseract worker/wasm 与语言包（>5MB 不进预缓存），首次识别后离线复用
+            urlPattern: ({ url }) => url.pathname.startsWith('/tessdata/') || url.pathname.startsWith('/tesseract/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'fangzi-tesseract',
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 90 }
+            }
           }
         ]
       },

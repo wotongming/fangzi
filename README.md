@@ -214,6 +214,15 @@ npm run new:tool -- <kebab-id> <web|plugin> "工具名称"  # 生成新工具骨
 - **文档**：`src/tools/pdf-redact/docs/`（guide/postmortem、architect/dev/ops、PC/手机真实界面截图）。
 - **更新时间**：2026-10-21 ｜ 状态：stable ｜ 版本：1.0.0
 
+### 16. 小票本（receipt-vault）
+
+- **简介**：拍小票/发票后浏览器本地 Tesseract OCR，自动抽字段（商家/日期/金额/税额），可人工校对、按项目（差旅/餐饮/办公/交通）挂账，导出 CSV 报销报税。图片与文本不上传、无后端。
+- **使用场景**：报税季整理一摞餐饮交通小票；按项目挂账月底报销；发票敏感不能上云识别。
+- **技术**：tesseract.js(Apache-2.0) + chi_sim/eng 语言包与 wasm 全部本地自托管、按需加载、SW 运行时缓存离线复用；字段正则抽取纯函数（多版式/千分位/合计·税额标签）；独立 IndexedDB 库 `fz-receipt-vault-v1`，不动既有任何键。
+- **计费**：Freemium（每月 20 张+基础分类+CSV 免费；无限张+汇总表为 Pro）+ Pro ¥49/年（本地演示支付）。
+- **文档**：`src/tools/receipt-vault/docs/`（guide/postmortem、architect/dev/ops、PC/手机真实界面截图）。
+- **更新时间**：2026-10-21 ｜ 状态：stable ｜ 版本：1.0.0
+
 ---
 
 ## 如何新增一个工具（可扩展框架）
