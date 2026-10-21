@@ -45,7 +45,7 @@ const progress = ref<AsrProgress>({ phase: 'load', percent: 0, message: '' })
 const language = ref<'auto' | 'chinese' | 'english'>('auto')
 const langLabel = computed(() => (language.value === 'chinese' ? '中文' : language.value === 'english' ? '英文' : '自动检测'))
 
-const ACCEPT = 'audio/*,.wav,.mp3,.m4a,.aac,.ogg,.flac,.webm'
+const ACCEPT = '.mp3,.wav,.m4a,.aac,.ogg,.webm,.mp4,.3gp,audio/*,video/*'
 
 function revokeAudio(): void {
   if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)

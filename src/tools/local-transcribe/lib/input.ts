@@ -64,13 +64,71 @@ export interface MicSession {
   cancel: () => void
 }
 
+/** 是否疑似微信/WeLink/QQ 等内置 WebView（这类容器常禁麦克风/wasm）。 */
+export function isEmbeddedBrowser(): boolean {
+  if (typeof navigator === 'undefined' || !navigator.userAgent) return false
+  const ua = navigator.userAgent.toLowerCase()
+  return /micromessenger|welink|qq\/|weibo| alipayclient|dingtalk/.test(ua)
+}
+
 export async function startMic(): Promise<MicSession> {
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-    throw new Error('当前浏览器不支持麦克风录音，可改用导入音频文件')
+    throw new Error(
+      isEmbeddedBrowser()
+        ? '当前是微信/WeLink 等内置浏览器，不支持麦克风录音。请点右上角菜单「在系统 Chrome/Edge 中打开」后再用。'
+        : '当前浏览器不支持麦克风录音，可改用导入音频文件'
+    )
   }
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
-  })
+  let stream: MediaStream
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
+    })
+  } catch (err) {
+    const name = (err as DOMException).name
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      throw new Error('麦克风权限被拒绝：请在浏览器/系统设置里允许麦克风后重试（也可直接导入音频文件）')
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      throw new Error('没有检测到麦克风设备，请接好麦克风后重试（也可直接导入音频文件）')
+    }
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+      throw new Error('麦克风被其它应用占用，请关闭其它录音 App 后重试')
+    }
+    if (window.isSecureContext === false) {
+      throw new Error('当前页面不是安全上下文（http），浏览器禁止麦克风。请用 https 或系统 Chrome 打开。')
+    }
+    throw new Error('无法打开麦克风：' + (err as Error).message + '（可改用导入音频文件）')
+  }
+  // 录音前 0.6s 电平自检：有轨道但全程 0 电平 → 直接提示，别录完才发现空
+  try {
+    const probe = createAudioContext()
+    if (probe.state === 'suspended') await probe.resume()
+    const an = probe.createAnalyser()
+    an.fftSize = 512
+    const src = probe.createMediaStreamSource(stream)
+    src.connect(an)
+    const buf = new Uint8Array(an.fftSize)
+    let maxLevel = 0
+    for (let i = 0; i < 6; i++) {
+      await new Promise((r) => setTimeout(r, 100))
+      an.getByteTimeDomainData(buf)
+      let sum = 0
+      for (let j = 0; j < buf.length; j++) {
+        const v = ((buf[j] ?? 128) - 128) / 128
+        sum += v * v
+      }
+      maxLevel = Math.max(maxLevel, Math.sqrt(sum / buf.length))
+    }
+    src.disconnect()
+    if (maxLevel < 0.01) {
+      stream.getTracks().forEach((t) => t.stop())
+      throw new Error('已获取麦克风但没有采集到声音（电平为 0）：请检查手机静音/麦克风是否被占用，或改用导入音频文件')
+    }
+  } catch (e) {
+    if ((e as Error).message.includes('采集到声音')) throw e
+    // 探针本身失败不阻断录音
+  }
   const recorder = new MediaRecorder(stream)
   const chunks: Blob[] = []
   recorder.ondataavailable = (e) => {
