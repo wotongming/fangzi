@@ -35,9 +35,13 @@ export function parseDate(text: string): string {
   return ''
 }
 
-/** 抽取金额：优先"合计/价税合计/小写/总金额/应付"附近的第一个数字；兜底最大数字。 */
+/** 抽取金额：优先"合计/价税合计/总金额/TOTAL"附近的第一个数字；兜底最大数字。
+ *  标签就近取值，TOTAL 在 TAX 之前，避免 TAX 被当总额。 */
 export function parseAmount(text: string): string {
-  const labels = ['价税合计', '合计金额', '合\\s*计', '小写', '总金额', '应付', '总计', '金额']
+  const labels = [
+    '价税合计', '合计金额', '合\\s*计', '小写', '总金额', '应付', '总计',
+    'TOTAL[^A-Z]', 'AMOUNT\\s*DUE', 'AMOUNT', 'SUBTOTAL', '金额'
+  ]
   for (const lab of labels) {
     const m = text.match(new RegExp(lab + '[^0-9¥￥$]{0,6}[¥￥$]?\\s*([0-9][0-9,]*\\.?\\d{1,2})'))
     if (m && m[1]) return normalizeAmount(m[1])
@@ -47,9 +51,9 @@ export function parseAmount(text: string): string {
   return ''
 }
 
-/** 抽取税额：优先"税额"标签后的数字；没有则空。 */
+/** 抽取税额：中文"税额/税金" 或 英文 "TAX"/"VAT" 标签后的数字；没有则空。 */
 export function parseTax(text: string): string {
-  const m = text.match(/税\s*额[^0-9¥￥$]{0,6}[¥￥$]?\s*([0-9][0-9,]*\.?\d{0,2})/)
+  const m = text.match(/(?:税\s*额|税\s*金|TAX\s*(?:INCL\.?|INCLUDE)?|VAT)[^0-9¥￥$A-Za-z]{0,8}[¥￥$]?\s*([0-9][0-9,]*\.?\d{0,2})/)
   return m && m[1] ? normalizeAmount(m[1]) : ''
 }
 

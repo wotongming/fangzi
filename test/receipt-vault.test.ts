@@ -35,6 +35,18 @@ test('parseTax：税额标签', () => {
   assert.equal(parseTax('无税额行'), '')
 })
 
+test('英文 TAX/VAT 税额与 TOTAL 总额不串', () => {
+  const en = parseReceipt('STARBUCKS COFFEE NANJING 2026-10-21 COFFEE 42.45 TAX 2.55 TOTAL 45.00')
+  assert.equal(en.amount, '45.00')
+  assert.equal(en.tax, '2.55')
+  const vat = parseReceipt('Store A 2026-10-21 100.00 VAT 6.00 TOTAL 106.00')
+  assert.equal(vat.tax, '6.00')
+  assert.equal(vat.amount, '106.00')
+  const zh = parseReceipt('商户：店A\n2026-10-21\n合计 45.00\n税额 2.55')
+  assert.equal(zh.amount, '45.00')
+  assert.equal(zh.tax, '2.55')
+})
+
 test('parseMerchant：标签后/兜底首行', () => {
   assert.equal(parseMerchant('商户：星巴克咖啡南京店'), '星巴克咖啡南京店')
   assert.equal(parseMerchant('永辉超市\n鸡蛋 12.00'), '永辉超市')
