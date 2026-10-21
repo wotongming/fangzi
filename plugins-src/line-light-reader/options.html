@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>行光阅读器 · 选项</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:720px;margin:24px auto;padding:0 16px;color:#1a2438;background:#f3f6fb}
+h1{font-size:20px} h2{font-size:15px;margin-top:28px;color:#33507a}
+.card{background:#fff;border:1px solid #e2e8f2;border-radius:14px;padding:16px;margin:12px 0}
+button{border:0;border-radius:10px;padding:8px 14px;background:#16213e;color:#fff;cursor:pointer;margin-right:8px}
+button.ghost{background:#fff;color:#33507a;border:1px solid #c3d2e6}
+li{margin:10px 0;line-height:1.6}
+.meta{color:#8899b3;font-size:12px}
+code{background:#eef3fa;padding:2px 6px;border-radius:6px}
+</style></head>
+<body>
+<h1>行光阅读器 · 选项</h1>
+
+<h2>摘录</h2>
+<div class="card">
+  <button id="md">导出 Markdown</button>
+  <button id="json" class="ghost">导出 JSON</button>
+  <button id="clear" class="ghost">清空摘录</button>
+  <ul id="list"></ul>
+</div>
+
+<h2>偏好</h2>
+<div class="card">
+  <label><input type="checkbox" id="dyslexic"> 使用 OpenDyslexic 字体（拉丁字母；中文走系统字体栈）</label>
+</div>
+
+<h2>许可码（Pro）</h2>
+<div class="card">
+  <p class="meta">beta 期全部功能免费开放；将来接入买断后在此输入许可码本地验签（ECDSA P-256，离线校验、不联网、不建账号）。</p>
+  <input id="code" placeholder="LLR-..." style="width:60%;padding:8px;border:1px solid #c3d2e6;border-radius:10px">
+  <button id="apply">应用</button>
+  <p id="licMsg" class="meta"></p>
+</div>
+
+<script src="options.js"></script>
+</body></html>

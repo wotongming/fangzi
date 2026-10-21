@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <h1>行光阅读器</h1>
+  <p class="sub">点图标即对当前文章注入专注层；再点一次退出还原。</p>
+  <div class="row"><label>引导色 <input type="checkbox" id="guide"></label></div>
+  <div class="row"><label>焦点行 <input type="checkbox" id="focusRow"></label></div>
+  <div class="row"><label>纯净阅读 <input type="checkbox" id="clean"></label></div>
+  <div class="row"><label>行距 <input type="range" id="lineHeight" min="1.4" max="2.4" step="0.1"></label><span id="lhVal"></span></div>
+  <div class="row"><label>朗读语速 <input type="range" id="rate" min="0.6" max="1.6" step="0.1"></label><span id="rateVal"></span></div>
+  <button id="opts" class="ghost">选项 / 摘录 / 许可码</button>
+  <script src="popup.js"></script>
+</body>
+</html>

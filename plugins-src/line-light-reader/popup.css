@@ -1,0 +1,7 @@
+body{width:260px;margin:0;padding:14px;font-family:system-ui,sans-serif;background:#0d1424;color:#eaf2ff}
+h1{font-size:15px;margin:0 0 4px}
+.sub{font-size:11px;color:#9fb4d8;margin:0 0 12px;line-height:1.5}
+.row{display:flex;align-items:center;justify-content:space-between;margin:10px 0;font-size:13px}
+.row input[type=range]{flex:1;margin:0 8px}
+button{width:100%;margin-top:12px;border:0;border-radius:10px;padding:9px;font-size:13px;background:#37e0ff;color:#0a0e1e;font-weight:700;cursor:pointer}
+button.ghost{background:transparent;color:#9fb4d8;border:1px solid #35507a;font-weight:400}
