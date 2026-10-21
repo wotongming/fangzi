@@ -27,8 +27,8 @@ export const manifest: ToolManifest = {
     {
       platform: 'browser-chromium',
       packageUrl: '/plugins/line-light-reader/line-light-reader-chrome-0.1.0.zip',
-      sha256: '28a171799bd3a4d3ae8ac2f08ee5c905ccf967fdd3a7ffb3569a94a1f3f9ad06',
-      sizeBytes: 9127,
+      sha256: '27017839476805d0bd1fe1852c82cacdb1067de9a863070ae81f9703514b27f9',
+      sizeBytes: 277825,
       version: '0.1.0',
       minHostVersion: 'Chrome 102 / Edge 102 及以上'
     }

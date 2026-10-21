@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { splitSentences } from '../plugins-src/line-light-reader/lib/sentences.ts'
-import { lineColor, clusterVisualLines } from '../plugins-src/line-light-reader/lib/gradient.ts'
+import { textColor, lineBg, clusterVisualLines, groupByLineTops } from '../plugins-src/line-light-reader/lib/gradient.ts'
 import { verifyLicense } from '../plugins-src/line-light-reader/lib/license.ts'
 import { normalizeExcerpt, toMarkdown } from '../plugins-src/line-light-reader/lib/excerpt.ts'
 
@@ -27,15 +27,17 @@ test('切句：中文按句号断开', () => {
   assert.equal(s.length, 3)
 })
 
-test('引导色：ratio 0 冷蓝 h210，ratio 1 暖橙 h28', () => {
-  assert.equal(lineColor(0).h, 210)
-  assert.equal(lineColor(1).h, 28)
-  assert.match(lineColor(0.5).css, /hsl\(/)
+test('文字引导色：ratio 0 冷蓝 h210，ratio 1 暖橙 h28', () => {
+  assert.equal(textColor(0).h, 210)
+  assert.equal(textColor(1).h, 28)
+  assert.match(textColor(0.5).css, /hsl\(/)
 })
 
 test('引导色：ratio 越界归正', () => {
-  assert.equal(lineColor(-1).h, 210)
-  assert.equal(lineColor(2).h, 28)
+  assert.equal(textColor(-1).h, 210)
+  assert.equal(textColor(2).h, 28)
+  assert.equal(lineBg(-1).h, 210)
+  assert.equal(lineBg(2).h, 28)
 })
 
 test('视觉行聚类：按 y 归两行，行内按 x 排序', () => {
@@ -49,6 +51,14 @@ test('视觉行聚类：按 y 归两行，行内按 x 排序', () => {
   assert.deepEqual(lines[0].items.map((i) => i.text), ['a', 'b'])
   assert.equal(lines[0].ratio, 0)
   assert.equal(lines[1].ratio, 1)
+})
+
+test('字符行分组：按 top 容差归行，保持原始下标', () => {
+  const tops = [10, 11, 41, 40, 12]
+  const groups = groupByLineTops(tops, 4)
+  assert.equal(groups.length, 2)
+  assert.deepEqual(groups[0], [0, 1, 4])
+  assert.deepEqual(groups[1], [2, 3])
 })
 
 test('许可：beta 未配置公钥时返回 free，不阻断功能', async () => {

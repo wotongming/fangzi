@@ -175,7 +175,7 @@ npm run new:tool -- <kebab-id> <web|plugin> "工具名称"  # 生成新工具骨
 - **使用场景**：①长文章获得逐行引导与焦点行聚焦；②去掉广告侧边栏聚焦正文；③本地朗读文章；④选中段落摘录后导出 Markdown/JSON。
 - **关键词**：阅读插件、专注阅读、行光引导色、焦点行、去广告阅读、阅读障碍字体、TTS、extension、line-light。
 - **计费**：Freemium（beta 期全部免费开放；将来买断 Pro：引导色增强 / Dyslexic 字体 / TTS 高亮 / 摘录导出）。
-- **分发**：压缩包 `/plugins/line-light-reader/line-light-reader-chrome-0.1.0.zip`，SHA256 `28a171799bd3a4d3ae8ac2f08ee5c905ccf967fdd3a7ffb3569a94a1f3f9ad06`，9127 字节，需 Chrome/Edge 102+；工具页提供「直接下载」与「校验 SHA256 后下载」。
+- **分发**：压缩包 `/plugins/line-light-reader/line-light-reader-chrome-0.1.0.zip`，SHA256 `27017839476805d0bd1fe1852c82cacdb1067de9a863070ae81f9703514b27f9`，277825 字节（含 Readability 与 OpenDyslexic woff2），需 Chrome/Edge 102+；工具页提供「直接下载」与「校验 SHA256 后下载」。
 - **更新时间**：2026-10-21 ｜ 状态：beta ｜ 版本：0.1.0
 
 ### 12. 家庭财务管家（household-finance）
