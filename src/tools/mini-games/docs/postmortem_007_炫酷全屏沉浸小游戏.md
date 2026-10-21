@@ -305,3 +305,17 @@ WebGPU/WGSL 原生后端；主题/色盲模式。
 - 单测 `test/merge-planet.test.ts`：动态池区间随进度上移/权重为正/采样不越界/R=0 只出陨石；仿真时长断言。`npm test` **447/447** 全绿（基线 446 +1 重写替换）。
 - E2E `scripts/e2e-merge-planet-balance-20261021.mjs`（三视口）：开局 nextSpawnTier 恒=0；推进到 R=9 能投出 0–7、R=15 能抓到上沿高级球；死亡线仍判负；showWin 通关显示「宇宙」；三视口 0 横向溢出、无 pageerror；断网 SW 可玩。
 - EdgeOne：本次无新增 wasm/模型，dist 总量与单文件限额基本无变化（最大单文件 onnx wasm 13.6MiB<25MiB）。
+
+## 2026-10-21 热修：切后台/页面回收对局进度丢失
+
+**根因**：merge-planet 原不监听 visibilitychange/pagehide；手机在 Android Chrome / iOS WKWebView 内存压力下会整页回收重载 → 内存中的 `planets` Map / score / maxReached 全丢，表现为"切回像重开"。主循环 dt=50ms clamp 本就存在（物理不会因后台积压一次性结算判负），**非根因**；真缺口是"不自动暂停 + 不自动快照"。
+
+**方案**：
+- FocusStage 宿主统一 hidden 自动暂停——仅在未暂停时 emit `update:paused=true`，回前台保持暂停由用户点继续，不偷跑、不吃后台积压 dt；监听成对 add/removeEventListener，Wake Lock 逻辑不受影响。
+- merge-planet 新增独立键 `fangzi:merge-planet:auto-save:v1`，复用既有 serializeSave/restoreFromSave（补 maxReached 字段、带 version/chain 校验、损坏/旧版安全降级为无快照）；hidden + pagehide + 进行中每 15s 节流三层快照；重载若有未完成快照弹「继续上一局 / 开始新局」；通关/判负/重开自动清快照；手动档 `fangzi:merge-planet:save:v1` 与高分库 IndexedDB `fz-mini-games-v1` 零改动。
+
+**逐游戏覆盖**：merge-planet 完整修好；其余 GPU 游戏（glow-match/mobius-runner/neon-pulse/orbit-surge）与经典 DOM 游戏（2048/Klotski/Memory）经 FocusStage 统一吃到自动暂停，但因无可复用序列化模块本轮未接自动快照（如实）。
+
+**验证**：新增单测（自动快照与手动档分键互不覆盖 / maxReached 往返 / 缺省与越界归正 / 损坏 JSON 当无快照），`npm test` **463/463** 全绿、`vue-tsc` 0 错、`verify:tools`=32、build 成功。三视口 E2E `scripts/e2e-merge-planet-autosave-20261021.mjs`：①hidden→visible 球数/分数/phase 不变、不判负；②reload 续玩后 tiers 与 reload 前一致、手动档键无污染、通关/重开清快照；三视口横向溢出 0、SW 离线可玩。截图 `mp-{pc,tablet,mobile}-autosave-resume.png`。
+
+**真机待验**：iOS WKWebView 后台 rAF 冻结与系统回收时机无头不能完全模拟，靠 hidden/pagehide+15s 节流三层兜底；建议真机"切微信 1 分钟再切回"复测一次。
