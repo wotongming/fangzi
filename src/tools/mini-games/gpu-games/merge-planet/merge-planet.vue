@@ -100,6 +100,8 @@ const phase = ref<'play' | 'win' | 'lose'>('play')
 const score = ref(0)
 const combo = ref(0)
 let currentTier = 0
+/** 本场所合成到的最高 tier：驱动动态投放池上沿（见 logic.ts SPAWN_MAX_BY_REACH）。 */
+let maxReached = 0
 const currentName = ref('')
 let aimX = 0
 let lastDropAt = -Infinity
@@ -182,6 +184,8 @@ function restoreFromSave(p: SavePayload): void {
     Matter.Body.setVelocity(sp.body, { x: b.vx, y: b.vy })
     Matter.Body.setAngularVelocity(sp.body, b.av)
   }
+  // 续玩恢复进度：maxReached 取场上球与待投球最高 tier（旧档球级经 save.ts 校验在 0..18，安全归正不崩）
+  maxReached = Math.max(0, p.currentTier, ...p.balls.map((b) => b.tier))
   // 恢复：可立即投放、连击窗口未触发、死亡线归零、回到进行态
   overline = createOverline()
   overNotified = false
@@ -319,6 +323,7 @@ function scanMerges(): void {
 
   // 循环结束后再生成高一级球，避免本帧连锁二次合并（连锁靠后续自然碰撞）
   for (const { produced, mx, my } of producedList) {
+    if (produced > maxReached) maxReached = produced
     const np = spawnPlanet(produced, mx, my)
     Matter.Body.setVelocity(np.body, { x: 0, y: -0.6 })
     if (isFinal(produced)) {
@@ -387,8 +392,8 @@ function tryDrop(): void {
   inFlight = true
   audio.blip(0)
   haptic(6, props.vibrate)
-  // 不展示「下一个」预告：投出后直接随机生成当前球
-  currentTier = rollSpawnTier()
+  // 不展示「下一个」预告：投出后按当前进度动态投放池随机生成当前球
+  currentTier = rollSpawnTier(maxReached)
   syncQueueLabels()
 }
 
@@ -687,7 +692,8 @@ function reset(): void {
   inFlight = false
   lastDropped = null
   particles = []
-  currentTier = rollSpawnTier()
+  maxReached = 0
+  currentTier = rollSpawnTier(maxReached)
   syncQueueLabels()
   emit('score', 0)
   emit('combo', 0)
@@ -699,9 +705,12 @@ function exposeDebug(): void {
   if (typeof window === 'undefined') return
   ;(window as unknown as Record<string, unknown>).__mergePlanet = {
     spawn: (tier: number, x?: number, y?: number) => {
+      if (tier > maxReached) maxReached = tier
       const p = spawnPlanet(tier, x ?? aimX, y ?? railH + 46)
       return p.body.id
     },
+    maxReached: () => maxReached,
+    nextSpawnTier: () => rollSpawnTier(maxReached),
     score: () => score.value,
     phase: () => phase.value,
     // 测试接缝：直接触发满级(宇宙)通关结算（物理逐级可达性由纯逻辑链单测覆盖）
@@ -813,7 +822,7 @@ watch(
 
 onMounted(() => {
   buildWorld()
-  currentTier = rollSpawnTier()
+  currentTier = rollSpawnTier(maxReached)
   syncQueueLabels()
   resize()
   aimX = W / 2

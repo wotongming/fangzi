@@ -8,7 +8,10 @@ import {
   COMBO_WINDOW_MS,
   DROP_COOLDOWN_MS,
   DEATH_LINE_MS,
-  MAX_SPAWN_TIER,
+  SPAWN_MAX_BY_REACH,
+  maxSpawnForReach,
+  spawnWeightsForReach,
+  clampReach,
   sameTier,
   nextTierIndex,
   isFinal,
@@ -21,7 +24,6 @@ import {
   wallAimRange,
   ballRadius,
   maxDiameterRatio,
-  SPAWN_WEIGHTS,
   gammaToGravityX,
   lerpGravityX,
   GRAVITY_DEADZONE_DEG,
@@ -83,20 +85,28 @@ test('升级链：从 0 逐级 +1 可合到 18 宇宙，18 触发终局且无 ne
   assert.equal(isFinal(17), false)
 })
 
-test('投放池：只含允许低级(0..4)，权重归一且低级更常见', () => {
-  assert.equal(MAX_SPAWN_TIER, 4)
-  assert.equal(SPAWN_WEIGHTS.length, MAX_SPAWN_TIER + 1)
-  const total = SPAWN_WEIGHTS.reduce((s, w) => s + w, 0)
-  assert.equal(total, 12)
-  // 权重单调不增（低级更常见）
-  for (let i = 1; i < SPAWN_WEIGHTS.length; i++) {
-    assert.ok(SPAWN_WEIGHTS[i]! <= SPAWN_WEIGHTS[i - 1]!)
+test('动态投放池：maxReached→[0,hi] 区间随进度上移，开局只出低级', () => {
+  // 开局 maxReached=0：只掉陨石(0)
+  assert.equal(maxSpawnForReach(0), 0)
+  assert.deepEqual(spawnWeightsForReach(0), [1])
+  // 进度推进后上沿单调不减、不越过最终级
+  let prev = -1
+  for (let R = 0; R <= FINAL_TIER; R++) {
+    const hi = maxSpawnForReach(R)
+    assert.ok(hi >= 0 && hi <= FINAL_TIER - 1, `R=${R} hi=${hi} 越界`)
+    assert.ok(hi >= prev - 1, `R=${R} 上沿不应倒退过多`)
+    prev = hi
   }
-  // 任意 rng 结果都落在 0..4，绝不投出高级
-  for (let k = 0; k < 200; k++) {
-    const t = rollSpawnTier(() => k / 200)
-    assert.ok(t >= 0 && t <= MAX_SPAWN_TIER)
+  // 权重长度 = hi+1、全为正
+  for (const R of [0, 4, 9, 13, 17]) {
+    const w = spawnWeightsForReach(R)
+    assert.equal(w.length, maxSpawnForReach(R) + 1)
+    assert.ok(w.every((x) => x > 0))
   }
+  // clampReach：非法/越界入参安全归正
+  assert.equal(clampReach(NaN), 0)
+  assert.equal(clampReach(-5), 0)
+  assert.equal(clampReach(99), FINAL_TIER)
 })
 
 test('布局半径：三视口短边内最大球直径 ≤ 0.34，半径单调且不越界', () => {
@@ -134,24 +144,30 @@ test('计分：连击 1 取基础分，连击递增 ×1.3，非法层级/连击�
   assert.ok(TIERS[18]!.baseScore > TIERS[9]!.baseScore * 20)
 })
 
-test('投放随机：注入 rng 可复现，且结果只落在 0..4', () => {
-  const out = new Set<number>()
-  let calls = 0
-  const rng = () => {
-    const seq = [0.1, 0.5, 0.7, 0.95, 0.3, 0.62]
-    return seq[calls++ % seq.length]!
+test('动态投放随机：注入 rng 可复现，绝不投出超过当前进度上沿的球', () => {
+  for (const R of [0, 4, 9, 13, 17]) {
+    const hi = maxSpawnForReach(R)
+    const out = new Set<number>()
+    let calls = 0
+    const rng = () => {
+      const seq = [0.1, 0.5, 0.7, 0.95, 0.3, 0.62]
+      return seq[calls++ % seq.length]!
+    }
+    for (let i = 0; i < 400; i++) {
+      const t = rollSpawnTier(R, rng)
+      out.add(t)
+      assert.ok(t >= 0 && t <= hi, `R=${R} 投出越界球 tier=${t} hi=${hi}`)
+    }
   }
-  for (let i = 0; i < 400; i++) {
-    const t = rollSpawnTier(rng)
-    out.add(t)
-    assert.ok(t >= 0 && t <= MAX_SPAWN_TIER)
+  // 低级权重为正、高级上沿权重也为正（低级保留 + 上沿可出）
+  for (const R of [0, 4, 9, 17]) {
+    const w = spawnWeightsForReach(R)
+    assert.ok(w[0]! > 0 && w[w.length - 1]! > 0)
   }
-  assert.ok(out.has(0))
-  assert.ok(out.has(4)) // 地球(4)也在投放池内
-  // 同一 rng 序列两次结果一致
-  const a = rollSpawnTier(() => 0.05)
-  const b = rollSpawnTier(() => 0.05)
-  assert.equal(a, b)
+  // R=0 开局只出陨石
+  for (let k = 0; k < 100; k++) assert.equal(rollSpawnTier(0, () => k / 100), 0)
+  // 同一 rng 两次结果一致
+  assert.equal(rollSpawnTier(9, () => 0.05), rollSpawnTier(9, () => 0.05))
 })
 
 test('投放闸门：下落占用中/冷却未到不可投，到点放行（含边界）', () => {
@@ -321,10 +337,51 @@ test('最高分：刷新/保留/平局非新纪录，非法输入兜底 0', () =
   assert.deepEqual(recordBest(100, NaN), { best: 100, isNewBest: false })
 })
 
-test('常量口径：连击窗口/冷却/死亡线为正且冷却小于窗口；投放池到地球(4)', () => {
+test('常量口径：连击窗口/冷却/死亡线为正且冷却小于窗口；动态投放表覆盖全部进度', () => {
   assert.ok(COMBO_WINDOW_MS > DROP_COOLDOWN_MS)
   assert.ok(DEATH_LINE_MS >= 1000)
-  assert.equal(MAX_SPAWN_TIER, 4)
+  assert.equal(SPAWN_MAX_BY_REACH.length, FINAL_TIER) // R=0..17（R=18 即通关）
+  // 早期开局只掉低级：R=0..1 上沿 ≤1
+  assert.ok(maxSpawnForReach(0) === 0 && maxSpawnForReach(1) <= 1)
+})
+
+test('平衡仿真：理想合并模型下通关步数落在目标区间（折真实 ~25–30 分钟）', () => {
+  // 与 scripts/merge-planet-balance-sim.mjs 同一模型：每投必合（最优放置），从低到高成对合并到宇宙
+  function once(seed: number): number {
+    let s = seed >>> 0
+    const rng = () => {
+      s = (s * 1103515245 + 12345) % 2147483648
+      return s / 2147483648
+    }
+    const counts = new Array(TIER_COUNT).fill(0)
+    let maxR = 0
+    let steps = 0
+    while (maxR < FINAL_TIER) {
+      counts[rollSpawnTier(maxR, rng)!]++
+      steps++
+      for (let t = 0; t < TIER_COUNT - 1; t++) {
+        while (counts[t] >= 2) {
+          counts[t] -= 2
+          counts[t + 1]++
+        }
+      }
+      for (let t = TIER_COUNT - 1; t >= 0; t--) {
+        if (counts[t] > 0) {
+          if (t > maxR) maxR = t
+          break
+        }
+      }
+    }
+    return steps
+  }
+  const out: number[] = []
+  for (let k = 0; k < 300; k++) out.push(once(k * 7919 + 13))
+  out.sort((a, b) => a - b)
+  const median = out[150]!
+  // 折算真实分钟 = 理想步数 ×1.6（错放开销）×5.5s/步 /60；目标中枢 25–30、可接受 20–35
+  const estMin = (median * 1.6 * 5.5) / 60
+  assert.ok(median >= 120 && median <= 260, `理想通关步数中位数=${median} 越界`)
+  assert.ok(estMin >= 20 && estMin <= 35, `估算通关=${estMin.toFixed(1)}min 越界 20–35`)
 })
 
 test('旧最高分兼容：key 不变，读到旧数值即保留、不清档', () => {

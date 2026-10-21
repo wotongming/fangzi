@@ -66,10 +66,63 @@ export const DROP_COOLDOWN_MS = 380
 export const DEATH_LINE_MS = 1750
 /** 警戒线持续超过该比例即开始闪烁警告（未到判负）。 */
 export const WARNING_RATIO = 0.5
-/** 可直接投出的最高初级（开局只在前 5 级 陨石~地球 里随机，高级只能靠合成）。 */
-export const MAX_SPAWN_TIER = 4
-/** 投放池权重（陨石~地球，低级更常见，合计归一）。 */
-export const SPAWN_WEIGHTS: readonly number[] = [5, 3, 2, 1, 1]
+/**
+ * 进度驱动的动态投放池：按「本场所合成到的最高级 maxReached」决定可直接投放的最高级（含）。
+ *
+ * 背景：旧版固定只掉前 5 级（陨石~地球），合成到 19 级宇宙需要约 2^18≈26 万个低级球当量，
+ * 是"玩几小时还不通关"的数学根因（指数级）。新曲线让可投放上沿随 maxReached 上移，
+ * 使"再晋升一级所需有效投放量"由指数降为近似线性（蒙特卡洛仿真：约 183 次理想投放，
+ * 折算真实对局约 25–30 分钟通关；见 scripts/merge-planet-balance-sim.mjs）。
+ *
+ * 表索引 = maxReached（已合成到的最高 tier），值 = 该进度下可直接掉落的最高 tier：
+ *   R=0 陨石  →只掉陨石（教学）
+ *   R=1 月球  →掉 陨石/月球
+ *   …每推进 2–3 级、投放上沿抬 1 级，高级球随进度逐步"直发"，保留低级合成乐趣但不堆指数工作量。
+ * 开局仍只出低级；绝不直接投出超过当前进度太多的高级球。
+ */
+export const SPAWN_MAX_BY_REACH: readonly number[] = [
+  0, // R=0 陨石
+  1, // R=1 月球
+  1, // R=2 水星
+  2, // R=3 火星
+  3, // R=4 地球
+  4, // R=5 海王星
+  4, // R=6 天王星
+  5, // R=7 土星
+  6, // R=8 木星
+  7, // R=9 太阳
+  8, // R=10 红巨星
+  9, // R=11 白矮星
+  10, // R=12 中子星
+  11, // R=13 黑洞
+  12, // R=14 球状星团
+  13, // R=15 星系
+  14, // R=16 星系团
+  15 // R=17 超星系团（最终 R=18 即通关，无需投放）
+]
+
+/** maxReached 安全归正到 [0,FINAL_TIER]（非法/越界入参兜底）。 */
+export function clampReach(maxReached: number): number {
+  if (!Number.isFinite(maxReached)) return 0
+  return Math.max(0, Math.min(FINAL_TIER, Math.floor(maxReached)))
+}
+
+/** 给定 maxReached，本场所能直接投放的最高 tier（含）。 */
+export function maxSpawnForReach(maxReached: number): number {
+  const r = clampReach(maxReached)
+  return Math.max(0, SPAWN_MAX_BY_REACH[Math.min(r, SPAWN_MAX_BY_REACH.length - 1)] ?? 0)
+}
+
+/**
+ * 给定 maxReached，投放池（0..maxSpawnForReach）各级权重。
+ * 随等级线性缓增（w=1+0.6*t）：低级仍常见（保留低级合成乐趣），越靠上沿权重略高以加速晋升。
+ */
+export function spawnWeightsForReach(maxReached: number): readonly number[] {
+  const hi = maxSpawnForReach(maxReached)
+  const w: number[] = []
+  for (let t = 0; t <= hi; t++) w.push(1 + 0.6 * t)
+  return w
+}
 
 /** 同级才合并。 */
 export function sameTier(a: number, b: number): boolean {
@@ -99,15 +152,17 @@ export function mergeScore(producedTier: number, combo: number): number {
 }
 
 /**
- * 投放随机：只在前 MAX_SPAWN_TIER 级（陨石~地球）内按 SPAWN_WEIGHTS 权重随机（低级更常见）。
- * 高级天体只能靠合成获得，绝不直接投出。注入 rng() ∈ [0,1) 便于单测复现；不注入退化为 Math.random。
+ * 投放随机：按 maxReached 决定的动态投放池（0..maxSpawnForReach）与 spawnWeightsForReach 权重随机。
+ * 不会投出超过当前进度合理上沿的球；开局 maxReached=0 只掉陨石。注入 rng()∈[0,1) 便于单测复现。
  */
-export function rollSpawnTier(rng: () => number = Math.random): number {
-  const total = SPAWN_WEIGHTS.reduce((s, w) => s + w, 0)
+export function rollSpawnTier(maxReached: number = 0, rng: () => number = Math.random): number {
+  const hi = maxSpawnForReach(maxReached)
+  const weights = spawnWeightsForReach(maxReached)
+  const total = weights.reduce((s, w) => s + w, 0)
   let r = rng() * total
-  for (let i = 0; i <= MAX_SPAWN_TIER; i++) {
-    const w = SPAWN_WEIGHTS[i] ?? 1
-    if (r < w) return i
+  for (let t = 0; t <= hi; t++) {
+    const w = weights[t] ?? 1
+    if (r < w) return t
     r -= w
   }
   return 0
