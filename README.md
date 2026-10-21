@@ -524,3 +524,10 @@ fangzi/
 - **数据与合规**：独立 IndexedDB 库 `fangzi-home-vault` v1（assets/docs/boxes/boxItems，category/location/assetId/boxId 索引；手动到期项存 LocalStorage），写库前 toRaw 拍平规避 DataCloneError；金额整数分；唯一新增运行时依赖 `qrcode-generator@2.0.4`（MIT，动态 import 懒 chunk，OSV 恶意包为另一名为 qrcode-generator-node 的 typo 包，与本包无关）；fflate/Web Crypto 原生复用既有能力，无后端、数据不上传，无 NC 授权资源。
 - **计费**：免费增值——50 张资产卡片、凭证照片、到期看板与 .ics、搬家箱单与 QR 免费；专业版**买断 ¥12.90**（订阅 月 ¥3.9/年 ¥29.9），解锁不限卡片、理赔 ZIP、加密备份与导入合并、OCR（实验）。
 - **位置**：`src/tools/home-vault/`，路由 `/#/t/home-vault`；文档见该目录 `docs/`（guide/postmortem、五阶段文档在 `docs/stage/`、PC·平板·手机真实截图在 `docs/shots/`）。M 档：纯逻辑下沉 `lib/`（models/store/photos/expiry/qrcode/claim-pack/crypto/merge/backup/ocr），新增 `test/home-vault.test.ts` 20 例（全量单测 403）；`npm run verify:tools` = 30；`scripts/e2e-home-vault-20261020.mjs` 三视口（1280×860 / 834×1112 / 375×812）全流程 E2E 全绿（建资产含 5 天内保修→拍照挂凭证→橙色到期+.ics 双 VALARM→建箱生成 QR→手输降级挂物→搜索出箱号目的地→理赔 ZIP 解包校验→加密导出/错口令失败/对口令新增与更新合并/照片可见→免费第 51 卡被墙买断解锁→断网档案仍在）、零横向溢出。EdgeOne 限额：dist 132 MiB / 150 文件 / 最大 22.9 MiB，本工具主 chunk 35.4KB（gzip 12.9KB）、qrcode 懒 chunk 20.6KB（gzip 7.2KB）、零大资产，均在 5 GiB / 20000 / 25 MiB 内。OCR（D16）未启用，ocr.ts 仅占位 experimental，列后续项。
+
+## 自由职业追款助手（payment-chaser · 2026-10-22）
+
+- **简介**：面向自由职业者/一人公司的本地应收台账与催收工具。录入客户、项目、金额、约定付款日后自动算账龄（逾期几天），账龄/现金流看板按 0–30 / 30–60 / 60–90 / 90+ 天分桶汇总待收合计与坏账预警；按逾期天数自动生成三档梯度催收话术（1–7 天礼貌提醒 / 8–29 天正式催告 / 30 天以上最后通牒），本地模板变量填充、一键复制为微信/邮件；每次催收按客户+项目留痕形成沟通时间线；一键导出投诉/起诉证据包（canvas 绘制中文报告页→pdf-lib 排版 PDF）与 CSV/JSON；内置全国拖欠投诉平台/12315 本地静态指引。全程本地 IndexedDB、无后端、无账号、不上传。
+- **目标用户**：被客户拖欠尾款的设计师/程序员/翻译/摄影师、一人公司/小微工作室、催款不好意思开口且没留痕的自由职业者、年底应收一堆现金流紧张的人。
+- **计费**：免费增值——最多 3 笔应收台账、账龄看板、梯度话术复制免费；专业版**买断 ¥19.90**，解锁不限客户/批量 CSV/JSON 导出与证据包 PDF 导出。
+- **位置**：`src/tools/payment-chaser/`，路由 `/#/t/payment-chaser`；文档见该目录 `docs/`（guide/postmortem、PC·平板·手机真实截图）。L 档：纯逻辑下沉 `lib/`（aging 账龄分桶/模板渲染、templates 三档话术、evidence 导出），新增 `test/payment-chaser.test.ts` 7 例；`npm run verify:tools` = 34；独立 IndexedDB 库 `fz-payment-chaser-v1`，不碰既有任何键；零新增 wasm/大模型，无 SW 改动。
