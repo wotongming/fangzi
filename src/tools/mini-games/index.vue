@@ -85,6 +85,16 @@ const NEON: GameDef[] = [
     kind: 'gpu',
     feature: 'neon-library',
     loader: () => import('./gpu-games/orbit-surge/orbit-surge.vue')
+  },
+  {
+    id: 'gravity-sling',
+    name: '挽星弓',
+    icon: '🏹',
+    desc: '拖拽蓄力瞄准，借多星引力弹射，13 关命中星门',
+    pro: false,
+    difficulties: ['classic'],
+    kind: 'gpu',
+    loader: () => import('./gpu-games/gravity-sling/gravity-sling.vue')
   }
 ]
 
