@@ -21,6 +21,7 @@ import {
   powerFromPull,
   predictTrajectory,
   resolveCombo,
+  comboDisplayMult,
   stepFrame,
   serializeSave,
   validateSave,
@@ -168,6 +169,15 @@ test('combo：窗口内连击累加，过期归零，倍率封顶 4', () => {
   assert.deepEqual(resolveCombo(2, 1.0, 0, 1.5), { combo: 3, mult: 3 })
   assert.deepEqual(resolveCombo(2, 3.0, 1.0, 1.5), { combo: 1, mult: 1 })
   assert.deepEqual(resolveCombo(4, 0.5, 0), { combo: 5, mult: 4 })
+})
+
+test('结算展示：bestCombo 存连续借力次数，0 基线显示 ×1，有连击按倍率封顶 ×4', () => {
+  assert.equal(comboDisplayMult(0), 1)
+  assert.equal(comboDisplayMult(1), 1)
+  assert.equal(comboDisplayMult(2), 2)
+  assert.equal(comboDisplayMult(4), 4)
+  assert.equal(comboDisplayMult(5), 4)
+  assert.equal(comboDisplayMult(-2), 1)
 })
 
 test('星门周期开合：窗口内开、窗口外关；动目标轨道位置随时间变化', () => {

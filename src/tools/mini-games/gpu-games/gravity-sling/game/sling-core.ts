@@ -85,6 +85,7 @@ export interface SlingState {
   level: number
   score: number
   combo: number
+  /** 历史峰值连续借力次数（0 = 无借力；展示倍率经 comboDisplayMult 换算，不改存储语义） */
   bestCombo: number
   comboAt: number
   collected: number
@@ -417,6 +418,16 @@ export function resolveCombo(
 ): { combo: number; mult: number } {
   const next = now - lastAt <= window ? combo + 1 : 1
   return { combo: next, mult: Math.min(next, COMBO_MAX_MULT) }
+}
+
+/**
+ * 仅展示层换算：`bestCombo` 存储的是「连续借力次数」（0 = 本局未触发借力，不是倍率），
+ * 计分倍率由 `resolveCombo` 给出 `min(次数, COMBO_MAX_MULT)`。结算面板需要显示倍率基线：
+ * 无借力(0) 显示 ×1；有借力按次数换算并封顶 ×4。存储字段、快照 schema 与计分逻辑均不改。
+ */
+export function comboDisplayMult(bestCombo: number): number {
+  if (!isFiniteNum(bestCombo) || bestCombo <= 0) return 1
+  return Math.min(Math.max(1, Math.floor(bestCombo)), COMBO_MAX_MULT)
 }
 
 /** 推进一固定步；直接修改 state，返回本步触发的事件（与 orbit-surge 纯逻辑同构）。 */
@@ -1213,7 +1224,7 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
       ])
     } else if (state.phase === 'win') {
       const last = state.level === LEVELS.length - 1
-      panel(last ? '通关终局星系！' : '命中星门！', [`得分 ${state.score} · 连击峰值 ×${state.bestCombo}`, `收集星尘 ${state.collected}`], [
+      panel(last ? '通关终局星系！' : '命中星门！', [`得分 ${state.score} · 连击峰值 ×${comboDisplayMult(state.bestCombo)}`, `收集星尘 ${state.collected}`], [
         { id: 'next', label: last ? '再来一轮' : '下一关' },
         { id: 'retry', label: '重试本关' }
       ])

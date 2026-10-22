@@ -102,6 +102,7 @@ wrapper 只做三件事：`onMounted` 调 `mount(canvas, opts)`、`watch` 宿主
 6. **调试缝分层**：宿主只把 handle 挂到 `window.__gravitySling`，高分/暂停/快照等句柄方法在根层，物理调试（`phase/isPaused/anchorScreen/layout/forcePortal/launch`）在 `debug` 命名空间；E2E 按此分层调用，避免把纯调试方法暴露进游戏状态机。
 7. **力度条遮挡锚点**：初版力度条固定贴屏幕底部，与锚点/橡皮筋叠在一起；改为贴锚点上方 84 世界像素，PC/平板/手机均可见且不挡出生点。
 8. **画布重复绘制分数与宿主 HUD 冲突**：`FocusStage` 已在左上 DOM 渲染分数/连击、右上渲染暂停钮；初版画布又在右上重复画分数，高分时被暂停钮遮挡只剩一位数，关卡标题也与左上分数叠字。最终画布**不再绘制分数/连击**（由 `onScore/onCombo` 上抛宿主 DOM 展示），关卡标题与提示改为顶部居中第二行，避开左右两侧宿主控件。
+9. **`bestCombo` 是借力次数而非倍率，结算不能直接拼 `×`**：存储字段 `bestCombo` 语义为历史峰值连续借力次数，0 表示本局无借力；`resolveCombo` 才把次数换算成 `min(次数, 4)` 倍率。结算面板初版直接显示 `×0`，不专业。新增纯展示函数 `comboDisplayMult`：0/非法/负值基线 ×1，`1→×1`、`2→×2`、封顶 ×4；**只改展示层**，快照 schema、取值、计分与封顶均不变，旧快照继续兼容。
 
 ## 四、验证覆盖
 
@@ -109,13 +110,13 @@ wrapper 只做三件事：`onMounted` 调 `mount(canvas, opts)`、`watch` 宿主
 
 | 检查项 | 结果 |
 | --- | --- |
-| `npm test` | **516** 通过（基线 505 + 本游戏 11 例），0 失败 |
+| `npm test` | **517** 通过（基线 505 + 本游戏 12 例），0 失败 |
 | `vue-tsc --noEmit` | **0 错误**（strict / noUnusedLocals / noUncheckedIndexedAccess） |
 | `npm run verify:tools` | **35**（子游戏不计顶层工具数，未变为 36） |
 | `npm run build` | 成功；gravity-sling 的 `js + css` chunk 进入 SW 预缓存清单 |
 | 运行时依赖 | `package.json` 未新增运行时依赖；零图片 / 音频 / wasm / 模型外链 |
 
-### 4.2 纯逻辑单测（`test/gravity-sling.test.ts`，11 例）
+### 4.2 纯逻辑单测（`test/gravity-sling.test.ts`，12 例）
 
 1. 13 关配置完整性：唯一星门、坐标界内、次数/时限合法、id 唯一、越界索引回退；
 2. 引力方向（恒星拉向自身 / 推斥星反向推开）、空天体零加速度、中心软化不产生 NaN；
@@ -127,7 +128,8 @@ wrapper 只做三件事：`onMounted` 调 `mount(canvas, opts)`、`watch` 宿主
 8. 限时关卡时间耗尽触发 `timeout` 且余量归零；
 9. combo：窗口内累加、过期归零、倍率封顶 ×4；
 10. 周期星门开/关判定；动目标轨道位置随时间变化；
-11. 快照 `serialize ↔ validate` 往返字段一致；损坏 JSON、版本不符、tool 不符、chain 不符全部回退 `null`；持久化/读取/清除往返正确。
+11. 快照 `serialize ↔ validate` 往返字段一致；损坏 JSON、版本不符、tool 不符、chain 不符全部回退 `null`；持久化/读取/清除往返正确；
+12. 结算展示换算 `comboDisplayMult`：`bestCombo=0` 基线显示 ×1，`1→×1`、`2→×2`、`4→×4`、`5` 封顶 ×4、非法/负值回退 ×1；存储字段仍为连续借力次数，旧快照 schema 不变。
 
 ### 4.3 三视口 Playwright E2E（`scripts/e2e-gravity-sling-20261022.mjs`）
 
@@ -149,13 +151,13 @@ wrapper 只做三件事：`onMounted` 调 `mount(canvas, opts)`、`watch` 宿主
 | 文件 | 视口 | 像素 | 大小（字节） | 内容 | 结论 |
 | --- | --- | --- | --- | --- | --- |
 | `shots/pc-aim.png` | PC 1280×860 | 1280×860 | 63,531 | 第 1 关竖直预测虚线、青色星门、橡皮筋、锚点上方力度条；左上宿主分数、顶部居中关名/提示、右上暂停钮互不遮挡 | 通过 |
-| `shots/pc-win.png` | PC 1280×860 | 1280×860 | 49,014 | 「命中星门！」结算面板：得分 300、连击峰值 ×0、收集星尘 0、下一关 / 重试本关；左上宿主分数 300 清晰可见 | 通过 |
+| `shots/pc-win.png` | PC 1280×860 | 1280×860 | 48,940 | 「命中星门！」结算面板：得分 300、连击峰值 **×1**（无借力基线）、收集星尘 0、下一关 / 重试本关；左上宿主分数 300 清晰可见 | 通过 |
 | `shots/tablet-aim.png` | 平板 834×1112 | 834×1112 | 65,066 | 竖屏等比缩放、预测轨迹、中段力度条、标题居中、无横向溢出 | 通过 |
 | `shots/mobile-aim.png` | 手机 375×812 | 375×812 | 45,219 | iPhone UA 触控布局、预测虚线、满力条、标题居中不压分数/暂停钮、底部安全区不遮挡操作 | 通过 |
 
 ### 4.5 EdgeOne Pages 限额复核（生产构建 `dist/`）
 
-- 总大小：**184,202,824 B ≈ 175.7 MiB**（`du -sh dist` 显示 177M 块占用）；
+- 总大小：**184,202,901 B ≈ 175.7 MiB**（`du -sh dist` 显示 177M 块占用）；
 - 文件数：**180**；
 - 最大单文件：`dist/mf/bge-small-zh-v1.5/onnx/model_quantized.onnx`，**24,010,842 B ≈ 22.9 MiB**（既有 ONNX，非本游戏引入）；
 - 限额对照：单项目 5 GiB、20,000 文件、单文件 25 MiB —— 全部满足；本游戏 chunk 为几十 KB 级纯代码 + CSS，未新增 wasm / 字体 / 图片 / 音频素材，**未改动 SW 既有预缓存/runtimeCaching 策略**，新 chunk 由既有分包与 glob 预缓存自动收录。
