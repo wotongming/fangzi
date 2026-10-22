@@ -1129,22 +1129,15 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
   }
 
   function drawHud(): void {
+    // 分数与连击由宿主 FocusStage 的 DOM HUD 负责（左上分数/连击、右上暂停），
+    // 本画布不再重复绘制分数；关卡标题与提示居中于顶部第二行，避开两侧宿主控件。
+    ctx.textAlign = 'center'
     ctx.fillStyle = 'rgba(234,242,255,0.92)'
-    ctx.font = '700 22px system-ui, sans-serif'
-    ctx.textAlign = 'left'
-    ctx.fillText(`第 ${state.level + 1}/13 关 · ${level.title}`, 18, 38)
-    ctx.font = '16px system-ui, sans-serif'
+    ctx.font = '700 20px system-ui, sans-serif'
+    ctx.fillText(`第 ${state.level + 1}/13 关 · ${level.title}`, cssW / 2, 34)
+    ctx.font = '15px system-ui, sans-serif'
     ctx.fillStyle = '#9fb4d8'
-    ctx.fillText(level.hint, 18, 66)
-    ctx.textAlign = 'right'
-    ctx.fillStyle = '#f4fbff'
-    ctx.font = '700 26px system-ui, sans-serif'
-    ctx.fillText(String(state.score), cssW - 18, 42)
-    if (state.combo > 1) {
-      ctx.fillStyle = '#ffd76a'
-      ctx.font = '700 18px system-ui, sans-serif'
-      ctx.fillText(`连击 ×${Math.min(state.combo, COMBO_MAX_MULT)}`, cssW - 18, 70)
-    }
+    ctx.fillText(level.hint, cssW / 2, 60)
     ctx.textAlign = 'left'
     ctx.font = '15px system-ui, sans-serif'
     ctx.fillStyle = '#9fb4d8'
