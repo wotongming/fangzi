@@ -92,6 +92,9 @@ async function mainChain(page, label, shotName) {
   await page.mouse.move(a.x, a.y + 150, { steps: 10 })
   await page.waitForTimeout(220)
   await shot(page, shotName)
+  const fps = await page.evaluate(() => window.__gravitySling.debug.fps())
+  log(`[${label}] fps=${fps.toFixed(1)}`)
+  if (fps < 15) fail.push(`${label} 瞄准阶段帧率过低：${fps.toFixed(1)}fps`)
   await page.mouse.up()
   await page.waitForTimeout(150)
 
@@ -149,6 +152,117 @@ async function mainChain(page, label, shotName) {
   if (!cleared) fail.push(`${label} 新局后自动快照未清除`)
 }
 
+async function denseChain(page, external, label, shotName, index) {
+  await page.evaluate((i) => window.__gravitySling.debug.setLevel(i), index)
+  await waitPhase(page, 'aim')
+  const info = await page.evaluate(() => {
+    const l = window.__gravitySling.debug.getLevel()
+    const others = l.bodies.filter((b) => b.kind !== 'collect')
+    return { index: l.index, count: others.length, kinds: others.map((b) => b.kind) }
+  })
+  log(`[${label}] dense level=${info.index + 1} bodies=${info.count} kinds=${info.kinds.join(',')}`)
+  if (info.index !== index) fail.push(`${label} 后期关跳转失败：level=${info.index}`)
+  if (info.count < 8) fail.push(`${label} 后期关实体天体数量不足：${info.count}`)
+  for (const kind of ['gravity', 'blackhole', 'asteroid']) {
+    if (!info.kinds.includes(kind)) fail.push(`${label} 后期关缺少 ${kind} 渲染断言`)
+  }
+
+  const a = await page.evaluate(() => window.__gravitySling.debug.anchorScreen())
+  await page.mouse.move(a.x, a.y)
+  await page.mouse.down()
+  await page.mouse.move(a.x, a.y + 130, { steps: 10 })
+  await page.waitForTimeout(250)
+  const predicted = await page.evaluate(() => window.__gravitySling.debug.predictions().length)
+  if (predicted < 20) fail.push(`${label} 高密度关预测轨迹点不足：${predicted}`)
+  await shot(page, shotName)
+  const fps = await page.evaluate(() => window.__gravitySling.debug.fps())
+  log(`[${label}] dense fps=${fps.toFixed(1)}`)
+  if (fps < 15) fail.push(`${label} 高密度关帧率过低：${fps.toFixed(1)}fps`)
+  await page.mouse.up()
+
+  // 高密度关后台暂停、重载后自动快照续玩。
+  await page.evaluate(() => window.__gravitySling.forceSave())
+  await setHidden(page, true)
+  const hiddenState = await page.evaluate(() => ({
+    level: window.__gravitySling.state().level,
+    paused: window.__gravitySling.debug.isPaused()
+  }))
+  if (!hiddenState.paused) fail.push(`${label} 高密度关切后台未暂停`)
+  if (hiddenState.level !== index) fail.push(`${label} 高密度关切后台关卡丢失`)
+  await setHidden(page, false)
+
+  await page.reload()
+  await enterGame(page, { clear: false })
+  await waitPhase(page, 'resume', 5000)
+  await page.evaluate(() => window.__gravitySling.resumeAuto())
+  await waitPhase(page, 'aim')
+  const back = await page.evaluate(() => window.__gravitySling.state().level)
+  if (back !== index) fail.push(`${label} 高密度关 reload 后续玩失败：level=${back}`)
+
+  const ov = await horizontalOverflow(page)
+  log(`[${label}] dense overflow=${ov}px`)
+  if (ov > 2) fail.push(`${label} 高密度关横向溢出 ${ov}px`)
+  if (external.length) fail.push(`${label} 高密度关存在外部请求：${external.slice(0, 3).join(', ')}`)
+}
+
+async function mobileDense(page, external, shotName, index) {
+  await page.evaluate((i) => window.__gravitySling.debug.setLevel(i), index)
+  await waitPhase(page, 'aim')
+  const info = await page.evaluate(() => {
+    const l = window.__gravitySling.debug.getLevel()
+    return { index: l.index, count: l.bodies.filter((b) => b.kind !== 'collect').length }
+  })
+  if (info.index !== index || info.count < 8) fail.push(`mobile dense level=${info.index} bodies=${info.count}`)
+  const a = await page.evaluate(() => window.__gravitySling.debug.anchorScreen())
+  await page.mouse.move(a.x, a.y)
+  await page.mouse.down()
+  await page.mouse.move(a.x, a.y + 110, { steps: 10 })
+  await page.waitForTimeout(250)
+  const predicted = await page.evaluate(() => window.__gravitySling.debug.predictions().length)
+  if (predicted < 20) fail.push(`mobile dense prediction points=${predicted}`)
+  await shot(page, shotName)
+  const fps = await page.evaluate(() => window.__gravitySling.debug.fps())
+  log(`[mobile dense] fps=${fps.toFixed(1)}`)
+  if (fps < 15) fail.push(`mobile dense 帧率过低：${fps.toFixed(1)}fps`)
+  await page.mouse.up()
+  const ov = await horizontalOverflow(page)
+  log(`[mobile dense] overflow=${ov}px`)
+  if (ov > 2) fail.push(`mobile dense 横向溢出 ${ov}px`)
+  if (external.length) fail.push(`mobile dense 外部请求：${external.slice(0, 3).join(', ')}`)
+}
+
+async function levelSelectCheck(page, label, shotName) {
+  await page.evaluate(() => window.__gravitySling.debug.openLevels())
+  await waitPhase(page, 'levels')
+  await page.waitForFunction(
+    () => window.__gravitySling.debug.levelButtons().filter((b) => b.id.startsWith('level:')).length === 6,
+    undefined,
+    { timeout: 5000 }
+  )
+  const first = await page.evaluate(() => {
+    const cards = window.__gravitySling.debug.levelButtons().filter((b) => b.id.startsWith('level:'))
+    const layout = window.__gravitySling.debug.layout()
+    return {
+      labels: cards.map((b) => Number(b.label)),
+      locked: cards.map((b) => !!b.locked),
+      minTouchHeight: Math.min(...cards.map((b) => b.h * layout.scale)),
+      minTouchWidth: Math.min(...cards.map((b) => b.w * layout.scale))
+    }
+  })
+  log(`[${label} level select] cards=${first.labels.join(',')} minTouch=${first.minTouchWidth.toFixed(1)}×${first.minTouchHeight.toFixed(1)}`)
+  if (first.labels.join(',') !== '1,2,3,4,5,6') fail.push(`${label} 首页关卡编号错误：${first.labels.join(',')}`)
+  if (first.locked[0] || first.locked.slice(1).some((locked) => !locked)) fail.push(`${label} 未解锁状态错误：${first.locked.join(',')}`)
+  if (first.minTouchHeight < 44) fail.push(`${label} 关卡按钮触控高度不足：${first.minTouchHeight.toFixed(1)}px`)
+
+  await page.evaluate(() => window.__gravitySling.debug.nextPage())
+  await page.waitForTimeout(150)
+  const second = await page.evaluate(() =>
+    window.__gravitySling.debug.levelButtons().filter((b) => b.id.startsWith('level:')).map((b) => Number(b.label))
+  )
+  if (second.join(',') !== '7,8,9,10,11,12') fail.push(`${label} 第二页关卡编号错误：${second.join(',')}`)
+  if (shotName) await shot(page, shotName)
+}
+
 async function run() {
   const browser = await chromium.launch({ executablePath: CHROMIUM, args: LAUNCH_ARGS })
   try {
@@ -165,6 +279,44 @@ async function run() {
       log(`[${label}] overflow=${ov}px`)
       if (ov > 2) fail.push(`${label} 横向溢出 ${ov}px`)
       if (external.length) fail.push(`${label} 存在外部请求：${external.slice(0, 3).join(', ')}`)
+      await page.close()
+    }
+
+    // PC 第 40 关高密度叠加场：多恒星/黑洞/陨石/推斥体 + 预测线 + 后台重载续玩。
+    {
+      const { page, external } = await newPage(browser, { width: 1280, height: 860 })
+      await enterGame(page)
+      await denseChain(page, external, 'pc-dense', 'pc-dense.png', 39)
+      await page.close()
+    }
+
+    // 手机第 50 关高密度叠加场代表图。
+    {
+      const { page, external } = await newPage(browser, { width: 375, height: 812 }, true)
+      await enterGame(page)
+      await mobileDense(page, external, 'mobile-dense.png', 49)
+      await page.close()
+    }
+
+    // PC 50 关选关分页与触控尺寸检查。
+    {
+      const { page, external } = await newPage(browser, { width: 1280, height: 860 })
+      await enterGame(page)
+      await levelSelectCheck(page, 'pc-levels', 'pc-levels.png')
+      const ov = await horizontalOverflow(page)
+      if (ov > 2) fail.push(`pc-levels 横向溢出 ${ov}px`)
+      if (external.length) fail.push(`pc-levels 外部请求：${external.slice(0, 3).join(', ')}`)
+      await page.close()
+    }
+
+    // 手机 50 关选关触控尺寸检查。
+    {
+      const { page, external } = await newPage(browser, { width: 375, height: 812 }, true)
+      await enterGame(page)
+      await levelSelectCheck(page, 'mobile-levels', 'mobile-levels.png')
+      const ov = await horizontalOverflow(page)
+      if (ov > 2) fail.push(`mobile-levels 横向溢出 ${ov}px`)
+      if (external.length) fail.push(`mobile-levels 外部请求：${external.slice(0, 3).join(', ')}`)
       await page.close()
     }
 
