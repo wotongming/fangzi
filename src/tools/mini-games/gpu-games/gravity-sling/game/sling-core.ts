@@ -1,302 +1,89 @@
 /**
  * 《挽星弓》（gravity-sling）—— 单文件自包含内核。
  *
- * 纯逻辑（引力积分 / 预测轨迹 / 碰撞 / combo / 通关判定 / 快照序列化校验）全部导出为
- * 无 DOM 纯函数，供 node:test 直接引用；运行时 mount/destroy 只负责 Canvas2D 渲染、
- * Pointer 输入、音频映射与自动快照。不引入任何第三方运行时库、图片或音频素材。
+ * 纯逻辑（引力积分 / 预测轨迹 / 碰撞 / combo / 通关判定 / 快照序列化校验 / 离线求解）
+ * 全部导出为无 DOM 纯函数，供 node:test 直接引用；运行时 mount/destroy 只负责 Canvas2D
+ * 渲染、Pointer 输入、音频映射与自动快照。不引入任何第三方运行时库、图片或音频素材。
  *
- * 物理：惯性 + 多行星反平方引力（软化半径防奇点），固定时间步 + dt clamp + 子步进。
+ * 物理：惯性 + 多行星反平方引力（软化半径防奇点 + 净加速度上限），固定时间步 +
+ * dt clamp + 子步进。关卡模型、难度映射与种子生成见 `level-design.ts`。
  */
 import { NeonAudio, haptic } from '../../../audio/synth'
+import {
+  WORLD_W,
+  WORLD_H,
+  SHIP_R,
+  V_MAX,
+  MAX_PULL,
+  GRAVITY_G,
+  SOFT,
+  ASSIST_EXTRA,
+  FIXED_DT,
+  MAX_FRAME_STEPS,
+  COMBO_WINDOW_S,
+  COMBO_MAX_MULT,
+  PREDICT_STEPS,
+  AUTO_SAVE_KEY,
+  PROGRESS_KEY,
+  SAVE_VERSION,
+  TOOL_ID,
+  CHAIN_ID,
+  LEGACY_CHAIN_ID,
+  LEVEL_COUNT,
+  ANCHOR,
+  MAX_ACCEL,
+  MIN_ANGLE_WINDOW_DEG,
+  MIN_CLEARANCE,
+  MAX_BODIES,
+  type Phase,
+  type Body,
+  type BodyKind,
+  type Orbit,
+  type LevelConfig,
+  type Ship,
+  type SlingState,
+  type FrameEvent,
+  type SolveEvidence
+} from './level-design'
+import { LEVELS, SOLUTIONS } from './levels.generated'
 
-// —— 世界与物理常数（量级与调参依据见 postmortem_007）——
-export const WORLD_W = 1000
-export const WORLD_H = 1500
-export const SHIP_R = 16
-export const V_MAX = 940
-export const MAX_PULL = 280
-export const GRAVITY_G = 1_600_000
-export const SOFT = 52
-export const ASSIST_EXTRA = 96
-export const FIXED_DT = 1 / 120
-export const MAX_FRAME_STEPS = 4
-export const COMBO_WINDOW_S = 1.5
-export const COMBO_MAX_MULT = 4
-export const PREDICT_STEPS = 150
-export const AUTO_SAVE_KEY = 'fangzi:gravity-sling:auto-save:v1'
-export const SAVE_VERSION = 1
-export const TOOL_ID = 'gravity-sling'
-export const CHAIN_ID = 'gravity-sling:levels:13:v1'
-
-export type Phase = 'intro' | 'aim' | 'fly' | 'win' | 'lose' | 'resume'
-export type BodyKind =
-  | 'gravity'
-  | 'repel'
-  | 'blackhole'
-  | 'asteroid'
-  | 'collect'
-  | 'portal'
-  | 'moving'
-
-export interface Orbit {
-  cx: number
-  cy: number
-  rx: number
-  ry: number
-  speed: number
-  phase: number
-}
-
-export interface Body {
-  id: number
-  kind: BodyKind
-  x: number
-  y: number
-  r: number
-  mass?: number
-  orbit?: Orbit
-  period?: { period: number; on: number }
-}
-
-export interface LevelConfig {
-  index: number
-  title: string
-  hint: string
-  /** -1 表示不限发射次数 */
-  shots: number
-  /** 0 表示不限时，单位秒 */
-  timeLimit: number
-  predictAlways: boolean
-  anchor: { x: number; y: number }
-  bodies: Body[]
-}
-
-export interface Ship {
-  x: number
-  y: number
-  vx: number
-  vy: number
-  angle: number
-  trail: { x: number; y: number }[]
-  launched: boolean
-}
-
-export interface SlingState {
-  level: number
-  score: number
-  combo: number
-  /** 历史峰值连续借力次数（0 = 无借力；展示倍率经 comboDisplayMult 换算，不改存储语义） */
-  bestCombo: number
-  comboAt: number
-  collected: number
-  collectedIds: number[]
-  shotsLeft: number
-  timeLeft: number
-  phase: Phase
-  ship: Ship
-  assists: number
-  /** 本尝试内已触发借力/拾取的天体 id（防止重复触发） */
-  assisted: number[]
-  elapsed: number
-  attempt: number
+export {
+  WORLD_W,
+  WORLD_H,
+  SHIP_R,
+  V_MAX,
+  MAX_PULL,
+  GRAVITY_G,
+  SOFT,
+  ASSIST_EXTRA,
+  FIXED_DT,
+  MAX_FRAME_STEPS,
+  COMBO_WINDOW_S,
+  COMBO_MAX_MULT,
+  PREDICT_STEPS,
+  AUTO_SAVE_KEY,
+  PROGRESS_KEY,
+  SAVE_VERSION,
+  TOOL_ID,
+  CHAIN_ID,
+  LEGACY_CHAIN_ID,
+  LEVEL_COUNT,
+  MAX_ACCEL,
+  MIN_ANGLE_WINDOW_DEG,
+  MIN_CLEARANCE,
+  MAX_BODIES,
+  type Phase,
+  type Body,
+  type BodyKind,
+  type Orbit,
+  type LevelConfig,
+  type Ship,
+  type SlingState,
+  type FrameEvent,
+  type SolveEvidence
 }
 
-export interface FrameEvent {
-  type: 'assist' | 'collect' | 'crash' | 'blackhole' | 'portal' | 'out' | 'timeout' | 'shots'
-  bodyId?: number
-}
-
-// —— 13 关配置（世界坐标 1000×1500，锚点统一底部中央）——
-const ANCHOR = { x: 500, y: 1380 }
-
-function portal(id: number, x: number, y: number, r = 72, period?: { period: number; on: number }): Body {
-  return { id, kind: 'portal', x, y, r, period }
-}
-function movingPortal(id: number, orbit: Orbit, r = 72): Body {
-  return { id, kind: 'moving', x: orbit.cx, y: orbit.cy, r, orbit }
-}
-function gravity(id: number, x: number, y: number, r: number, mass = 1): Body {
-  return { id, kind: 'gravity', x, y, r, mass }
-}
-function repel(id: number, x: number, y: number, r: number): Body {
-  return { id, kind: 'repel', x, y, r, mass: 1 }
-}
-function blackhole(id: number, x: number, y: number, r: number): Body {
-  return { id, kind: 'blackhole', x, y, r, mass: 1 }
-}
-function asteroid(id: number, x: number, y: number, r: number): Body {
-  return { id, kind: 'asteroid', x, y, r }
-}
-function collect(id: number, x: number, y: number, r = 26): Body {
-  return { id, kind: 'collect', x, y, r }
-}
-
-export const LEVELS: LevelConfig[] = [
-  {
-    index: 0,
-    title: '启程直瞄',
-    hint: '按住锚点向后拖拽，松手把星箭射向星门',
-    shots: -1,
-    timeLimit: 0,
-    predictAlways: true,
-    anchor: ANCHOR,
-    bodies: [portal(1, 500, 300)]
-  },
-  {
-    index: 1,
-    title: '沿途收星',
-    hint: '沿直线微调角度，顺手拾取沿途星尘',
-    shots: -1,
-    timeLimit: 0,
-    predictAlways: true,
-    anchor: ANCHOR,
-    bodies: [collect(2, 500, 1080), collect(3, 500, 800), collect(4, 500, 560), portal(1, 500, 300)]
-  },
-  {
-    index: 2,
-    title: '引力偏折',
-    hint: '恒星会把轨迹压弯，瞄得比星门略偏',
-    shots: -1,
-    timeLimit: 0,
-    predictAlways: true,
-    anchor: ANCHOR,
-    bodies: [gravity(2, 260, 760, 46), collect(3, 520, 560), portal(1, 740, 380, 70)]
-  },
-  {
-    index: 3,
-    title: '单星绕弯借力',
-    hint: '贴近恒星半圈再切出，绕过陨石抵达星门',
-    shots: -1,
-    timeLimit: 0,
-    predictAlways: false,
-    anchor: ANCHOR,
-    bodies: [
-      gravity(2, 500, 620, 54),
-      asteroid(3, 380, 520, 40),
-      asteroid(4, 620, 520, 40),
-      portal(1, 500, 300)
-    ]
-  },
-  {
-    index: 4,
-    title: '反向抬升借力',
-    hint: '借上方恒星的引力把轨迹托举过障碍',
-    shots: -1,
-    timeLimit: 0,
-    predictAlways: false,
-    anchor: ANCHOR,
-    bodies: [
-      gravity(2, 300, 600, 50),
-      asteroid(3, 500, 720, 46),
-      asteroid(4, 500, 600, 40),
-      portal(1, 500, 280)
-    ]
-  },
-  {
-    index: 5,
-    title: '双星接力',
-    hint: '先借 A 星转向，再借 B 星加速切入星门',
-    shots: 3,
-    timeLimit: 0,
-    predictAlways: false,
-    anchor: ANCHOR,
-    bodies: [gravity(2, 300, 800, 48), gravity(3, 700, 520, 48), portal(1, 500, 280)]
-  },
-  {
-    index: 6,
-    title: '三连借力链',
-    hint: '三颗天体连续接力，combo 越高得分越多',
-    shots: 3,
-    timeLimit: 0,
-    predictAlways: false,
-    anchor: ANCHOR,
-    bodies: [
-      gravity(2, 260, 880, 46),
-      gravity(3, 500, 640, 46),
-      gravity(4, 740, 420, 46),
-      portal(1, 500, 260)
-    ]
-  },
-  {
-    index: 7,
-    title: '限次数挑战',
-    hint: '本关仅 3 发，弹尽即失败，先想清楚再松手',
-    shots: 3,
-    timeLimit: 0,
-    predictAlways: false,
-    anchor: ANCHOR,
-    bodies: [
-      asteroid(2, 360, 900, 42),
-      asteroid(3, 640, 760, 42),
-      asteroid(4, 420, 560, 38),
-      portal(1, 500, 300)
-    ]
-  },
-  {
-    index: 8,
-    title: '限时窗口',
-    hint: '星门周期性开合，等窗口亮起再发射',
-    shots: 3,
-    timeLimit: 25,
-    predictAlways: false,
-    anchor: ANCHOR,
-    bodies: [portal(1, 500, 300, 72, { period: 6, on: 3 })]
-  },
-  {
-    index: 9,
-    title: '动目标预判',
-    hint: '星门沿椭圆缓慢移动，提前量要算在前面',
-    shots: 3,
-    timeLimit: 0,
-    predictAlways: false,
-    anchor: ANCHOR,
-    bodies: [movingPortal(1, { cx: 500, cy: 320, rx: 220, ry: 60, speed: 0.5, phase: 0 })]
-  },
-  {
-    index: 10,
-    title: '推斥天体登场',
-    hint: '红色反重力星会推开星箭，顺势借力改向',
-    shots: 3,
-    timeLimit: 0,
-    predictAlways: false,
-    anchor: ANCHOR,
-    bodies: [repel(2, 300, 700, 48), repel(3, 700, 700, 48), portal(1, 500, 300)]
-  },
-  {
-    index: 11,
-    title: '黑洞与小行星带',
-    hint: '黑洞近距吞噬，陨石带需穿行避让',
-    shots: 3,
-    timeLimit: 30,
-    predictAlways: false,
-    anchor: ANCHOR,
-    bodies: [
-      blackhole(2, 500, 760, 40),
-      asteroid(3, 280, 640, 36),
-      asteroid(4, 720, 640, 36),
-      asteroid(5, 360, 500, 32),
-      asteroid(6, 640, 500, 32),
-      portal(1, 500, 280)
-    ]
-  },
-  {
-    index: 12,
-    title: '终局星系',
-    hint: '限时 + 动目标 + 星尘混合，三星收官',
-    shots: 3,
-    timeLimit: 30,
-    predictAlways: false,
-    anchor: ANCHOR,
-    bodies: [
-      movingPortal(1, { cx: 500, cy: 300, rx: 180, ry: 70, speed: 0.7, phase: 1 }),
-      repel(2, 260, 820, 44),
-      blackhole(3, 720, 620, 36),
-      collect(4, 380, 560),
-      collect(5, 620, 560),
-      collect(6, 500, 420)
-    ]
-  }
-]
+export { LEVELS, SOLUTIONS }
 
 // —— 纯函数 ——
 
@@ -319,7 +106,11 @@ export function isPortalOpen(b: Body, t: number): boolean {
   return m < b.period.on
 }
 
-/** 引力/推斥/黑洞加速度（反平方 + 软化半径）。 */
+/**
+ * 引力/推斥/黑洞加速度。本函数天然遍历全部力体做矢量叠加：
+ * `ax += ...; ay += ...`；黑洞质量 ×3，推斥 sign=-1。多体近场叠加后做净加速度上限，
+ * 防止高密度后期关数值爆炸；预测轨迹与离线求解器都复用本函数，不存在第二套物理。
+ */
 export function gravityAccel(
   bodies: Body[],
   x: number,
@@ -342,6 +133,11 @@ export function gravityAccel(
     const sign = b.kind === 'repel' ? -1 : 1
     ax += sign * (dx / d) * mag
     ay += sign * (dy / d) * mag
+  }
+  const mag = Math.hypot(ax, ay)
+  if (mag > MAX_ACCEL) {
+    ax *= MAX_ACCEL / mag
+    ay *= MAX_ACCEL / mag
   }
   return { ax, ay }
 }
@@ -383,7 +179,7 @@ function outOfBounds(x: number, y: number): boolean {
   return x < 0 || x > WORLD_W || y < 0 || y > WORLD_H
 }
 
-/** 数值积分预演预测轨迹点列；命中星门/实体/出界即停。 */
+/** 数值积分预演预测轨迹点列；命中星门/实体/出界即停。复用 gravityAccel 合力函数。 */
 export function predictTrajectory(
   level: LevelConfig,
   dir: { nx: number; ny: number },
@@ -398,7 +194,7 @@ export function predictTrajectory(
   }
   const pts: { x: number; y: number }[] = []
   for (let s = 0; s < steps; s++) {
-    const a = gravityAccel(level.bodies, ship.x, ship.y, 0)
+    const a = gravityAccel(level.bodies, ship.x, ship.y, 0, level.gravityScale ?? GRAVITY_G, SOFT)
     ship.vx += a.ax * FIXED_DT
     ship.vy += a.ay * FIXED_DT
     ship.x += ship.vx * FIXED_DT
@@ -448,7 +244,7 @@ export function stepFrame(state: SlingState, level: LevelConfig, dt: number, now
     }
   }
 
-  const a = gravityAccel(level.bodies, state.ship.x, state.ship.y, state.elapsed)
+  const a = gravityAccel(level.bodies, state.ship.x, state.ship.y, state.elapsed, level.gravityScale ?? GRAVITY_G, SOFT)
   state.ship.vx += a.ax * dt
   state.ship.vy += a.ay * dt
   state.ship.x += state.ship.vx * dt
@@ -505,6 +301,105 @@ export function stepFrame(state: SlingState, level: LevelConfig, dt: number, now
   return events
 }
 
+// —— 离线求解器：复用 createInitialState/stepFrame/gravityAccel，不另写物理 ——
+
+interface SimResult {
+  hit: boolean
+  steps: number
+  clearance: number
+}
+
+function simulateLaunch(level: LevelConfig, angleDeg: number, power: number, maxSteps: number): SimResult {
+  const st = createInitialState(level)
+  st.phase = 'fly'
+  st.ship.launched = true
+  st.ship.x = level.anchor.x
+  st.ship.y = level.anchor.y
+  st.elapsed = 0
+  st.shotsLeft = level.shots < 0 ? -1 : 1
+  st.timeLeft = level.timeLimit
+  st.attempt = 1
+  const rad = (angleDeg * Math.PI) / 180
+  st.ship.vx = Math.cos(rad) * power * V_MAX
+  st.ship.vy = Math.sin(rad) * power * V_MAX
+
+  const portal = level.bodies.find((b) => b.kind === 'portal' || b.kind === 'moving')
+  for (let step = 1; step <= maxSteps; step += 1) {
+    st.elapsed += FIXED_DT
+    const ev = stepFrame(st, level, FIXED_DT, st.elapsed)
+    if (ev.some((e) => e.type === 'portal')) {
+      const p = portal ? bodyPos(portal, st.elapsed) : { x: st.ship.x, y: st.ship.y }
+      const dist = Math.hypot(p.x - st.ship.x, p.y - st.ship.y)
+      return { hit: true, steps: step, clearance: portal ? portal.r + SHIP_R - dist : MIN_CLEARANCE }
+    }
+    if (ev.some((e) => e.type === 'crash' || e.type === 'blackhole' || e.type === 'out' || e.type === 'timeout')) {
+      return { hit: false, steps: step, clearance: 0 }
+    }
+  }
+  return { hit: false, steps: maxSteps, clearance: 0 }
+}
+
+/** 供单测/证据复核：用与运行时相同的 stepFrame 复放一条给定弹道。 */
+export function simulateSolution(level: LevelConfig, angleDeg: number, power: number, maxSteps = 1200): SimResult {
+  return simulateLaunch(level, angleDeg, power, maxSteps)
+}
+
+/** 在角度 ×力度网格上搜索可解弹道；返回命中解、角度窗口与门体净空，失败返回 null。 */
+export function solveLevel(level: LevelConfig, opts?: { maxSteps?: number; timeoutMs?: number }): SolveEvidence | null {
+  const maxSteps = opts?.maxSteps ?? Math.max(600, Math.ceil((level.timeLimit > 0 ? level.timeLimit : 12) * 120))
+  const started = Date.now()
+  const portal = level.bodies.find((b) => b.kind === 'portal' || b.kind === 'moving')
+  const bodyCount = level.bodies.filter((b) => b.kind !== 'collect').length
+  const candidates: { angleDeg: number; power: number; result: SimResult }[] = []
+
+  const angles = Array.from({ length: 21 }, (_, i) => -130 + i * 4)
+  const powers = Array.from({ length: 14 }, (_, i) => 0.35 + i * 0.05)
+
+  for (const angleDeg of angles) {
+    for (const power of powers) {
+      if (opts?.timeoutMs && Date.now() - started > opts.timeoutMs) return null
+      const result = simulateLaunch(level, angleDeg, power, maxSteps)
+      if (result.hit) candidates.push({ angleDeg, power, result })
+    }
+  }
+  if (!candidates.length) return null
+
+  candidates.sort((a, b) => b.result.clearance - a.result.clearance || a.result.steps - b.result.steps)
+  let best = candidates[0]!
+
+  // 局部细化：角度 ±4°、力度 ±0.08。
+  for (let angle = best.angleDeg - 4; angle <= best.angleDeg + 4; angle += 1) {
+    for (let power = Math.max(0.35, best.power - 0.08); power <= Math.min(1, best.power + 0.08); power += 0.02) {
+      if (opts?.timeoutMs && Date.now() - started > opts.timeoutMs) break
+      const result = simulateLaunch(level, angle, power, maxSteps)
+      if (result.hit && (result.clearance > best.result.clearance || (result.clearance === best.result.clearance && result.steps < best.result.steps))) {
+        best = { angleDeg: angle, power, result }
+      }
+    }
+  }
+
+  // 角度窗口：固定最佳力度，统计最佳解附近连续可命中角度宽度。
+  let windowCount = 0
+  for (let angle = best.angleDeg - 10; angle <= best.angleDeg + 10; angle += 1) {
+    const result = simulateLaunch(level, angle, best.power, maxSteps)
+    if (result.hit) windowCount += 1
+  }
+  const angleWindowDeg = windowCount
+
+  return {
+    index: level.index,
+    seed: level.index * 1_000_003 + 7,
+    retries: 0,
+    angleDeg: Math.round(best.angleDeg * 10) / 10,
+    power: Math.round(best.power * 1000) / 1000,
+    steps: best.result.steps,
+    angleWindowDeg,
+    clearance: Math.round(best.result.clearance * 10) / 10,
+    bodyCount,
+    portalKind: portal?.kind ?? 'portal'
+  }
+}
+
 // —— 快照（独立键，与 merge-planet 及合集高分库物理隔离）——
 
 export interface SavePayload {
@@ -559,19 +454,19 @@ export interface ValidateResult {
   ok: boolean
   payload: SavePayload | null
   dropped: number
+  migrated: boolean
 }
 
 export function validateSave(raw: unknown): ValidateResult {
-  const fail: ValidateResult = { ok: false, payload: null, dropped: 0 }
+  const fail: ValidateResult = { ok: false, payload: null, dropped: 0, migrated: false }
   if (!raw || typeof raw !== 'object') return fail
   const r = raw as Record<string, unknown>
-  if (r.version !== SAVE_VERSION) return fail
-  if (r.tool !== TOOL_ID) return fail
-  if (r.chain !== CHAIN_ID) return fail
+  const legacy = r.version === 1 && r.tool === TOOL_ID && r.chain === LEGACY_CHAIN_ID
+  const current = r.version === SAVE_VERSION && r.tool === TOOL_ID && r.chain === CHAIN_ID
+  if (!legacy && !current) return fail
   if (!isFiniteNum(r.savedAt) || r.savedAt <= 0) return fail
-  const level = Number.isInteger(r.level) && (r.level as number) >= 0 && (r.level as number) < LEVELS.length
-    ? Math.floor(r.level as number)
-    : 0
+  const rawLevel = Number.isInteger(r.level) && (r.level as number) >= 0 ? Math.floor(r.level as number) : 0
+  const level = Math.min(LEVELS.length - 1, rawLevel)
   const shipRaw = (r.ship ?? {}) as Record<string, unknown>
   const ship = {
     x: isFiniteNum(shipRaw.x) ? (shipRaw.x as number) : ANCHOR.x,
@@ -586,6 +481,7 @@ export function validateSave(raw: unknown): ValidateResult {
   return {
     ok: true,
     dropped: 0,
+    migrated: legacy,
     payload: {
       version: SAVE_VERSION,
       tool: TOOL_ID,
@@ -677,6 +573,39 @@ export function persistSave(payload: SavePayload, key: string, storage?: Storage
   return writeSaveRaw(key, JSON.stringify(payload), storage)
 }
 
+// —— 关卡进度（独立 localStorage 键；只存最大已解锁关卡与本机最高分，不进合集高分库）——
+
+export interface ProgressPayload {
+  version: number
+  tool: string
+  maxReached: number
+  bestScore: number
+}
+
+export function readProgress(storage?: StorageLike | null): ProgressPayload {
+  const fallback: ProgressPayload = { version: 1, tool: TOOL_ID, maxReached: 0, bestScore: 0 }
+  const s = storage ?? defaultStorage()
+  if (!s) return fallback
+  try {
+    const raw = s.getItem(PROGRESS_KEY)
+    if (!raw) return fallback
+    const r = JSON.parse(raw) as Record<string, unknown>
+    if (r.tool !== TOOL_ID) return fallback
+    return {
+      version: 1,
+      tool: TOOL_ID,
+      maxReached: Math.max(0, Math.min(LEVEL_COUNT - 1, Math.floor(isFiniteNum(r.maxReached) ? (r.maxReached as number) : 0))),
+      bestScore: Math.max(0, Math.floor(isFiniteNum(r.bestScore) ? (r.bestScore as number) : 0))
+    }
+  } catch {
+    return fallback
+  }
+}
+
+export function writeProgress(p: ProgressPayload, storage?: StorageLike | null): boolean {
+  return writeSaveRaw(PROGRESS_KEY, JSON.stringify(p), storage)
+}
+
 // —— 运行时挂载 ——
 
 export interface MountOptions {
@@ -697,6 +626,7 @@ export interface SlingHandle {
   resumeAuto(): void
   discardAuto(): void
   autoSaveNow(): void
+  forceSave(): void
   clearAutoSave(): void
   state(): SlingState
   debug: {
@@ -707,14 +637,21 @@ export interface SlingHandle {
     phase(): Phase
     isPaused(): boolean
     anchorScreen(): { x: number; y: number }
+    predictions(): { x: number; y: number }[]
+    openLevels(): void
+    nextPage(): void
+    levelButtons(): { id: string; label: string; locked?: boolean; x: number; y: number; w: number; h: number }[]
+    fps(): number
     layout(): { scale: number; ox: number; oy: number; cssW: number; cssH: number }
+    progress(): ProgressPayload
   }
 }
 
-export function createInitialState(level: number, score = 0, collected = 0): SlingState {
-  const levelCfg = levelByIdx(level)
+export function createInitialState(level: LevelConfig | number, score = 0, collected = 0): SlingState {
+  const levelCfg = typeof level === 'number' ? levelByIdx(level) : level
+  const levelIndex = typeof level === 'number' ? level : level.index
   return {
-    level,
+    level: levelIndex,
     score,
     combo: 0,
     bestCombo: 0,
@@ -742,6 +679,7 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
   let vibrate = opts.vibrate
 
   let saved: SavePayload | null = loadSave(AUTO_SAVE_KEY)
+  let progress = readProgress()
   let state: SlingState = saved ? restoreState(saved) : createInitialState(0)
   if (saved) state.phase = 'resume'
   else state.phase = 'intro'
@@ -751,8 +689,12 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
   let dragging = false
   let drag = { x: level.anchor.x, y: level.anchor.y }
   let predicted: { x: number; y: number }[] = []
+  let predictKey = ''
+  let fpsWindow: number[] = []
   let particles: { x: number; y: number; vx: number; vy: number; life: number; max: number; hue: number }[] = []
-  let buttons: { id: string; x: number; y: number; w: number; h: number; label: string }[] = []
+  let buttons: { id: string; x: number; y: number; w: number; h: number; label: string; locked?: boolean }[] = []
+  let levelPage = 0
+  const PAGE_SIZE = 6
   let raf = 0
   let last = 0
   let acc = 0
@@ -782,6 +724,27 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
     level = levelByIdx(state.level)
   }
 
+  function persistProgress(): void {
+    writeProgress(progress)
+  }
+
+  function unlockLevel(i: number): void {
+    progress.maxReached = Math.max(progress.maxReached, Math.min(LEVEL_COUNT - 1, i))
+    persistProgress()
+  }
+
+  function startLevel(i: number): void {
+    const target = Math.max(0, Math.min(LEVEL_COUNT - 1, Math.floor(i)))
+    state = createInitialState(target, 0, 0)
+    syncLevel()
+    unlockLevel(target)
+    clearSave(AUTO_SAVE_KEY)
+    dragging = false
+    predicted = []
+    predictKey = ''
+    drag = { x: level.anchor.x, y: level.anchor.y }
+  }
+
   function resize(): void {
     const parent = canvas.parentElement
     const rect = parent ? parent.getBoundingClientRect() : canvas.getBoundingClientRect()
@@ -809,11 +772,16 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
     if (state.phase !== 'aim') return
     const v = aimVector(level.anchor, drag)
     const power = powerFromPull(v.len)
+    const key = `${state.level}|${Math.round(drag.x)}|${Math.round(drag.y)}|${power.toFixed(3)}|${Math.floor(state.elapsed)}`
+    if (key === predictKey) return
+    predictKey = key
     predicted = power > 0.12 ? predictTrajectory(level, v, power) : []
   }
 
   function burst(x: number, y: number, hue: number, count = 26): void {
-    for (let i = 0; i < count; i++) {
+    const dense = level.bodies.length > 9
+    const n = dense ? Math.round(count * 0.6) : count
+    for (let i = 0; i < n; i += 1) {
       const a = Math.random() * Math.PI * 2
       const sp = 60 + Math.random() * 220
       particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.7 + Math.random() * 0.5, max: 1.2, hue })
@@ -860,6 +828,9 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
         case 'portal': {
           const bonus = 300 + Math.round(state.timeLeft * 10) + Math.max(0, state.shotsLeft) * 50
           state.score += bonus
+          progress.maxReached = Math.max(progress.maxReached, Math.min(LEVEL_COUNT - 1, state.level + 1))
+          progress.bestScore = Math.max(progress.bestScore, state.score)
+          persistProgress()
           opts.onScore(state.score)
           state.phase = 'win'
           burst(state.ship.x, state.ship.y, 190, 40)
@@ -885,6 +856,7 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
     if (power < 0.12) {
       dragging = false
       predicted = []
+      predictKey = ''
       return
     }
     if (level.shots >= 0 && state.shotsLeft <= 0) return
@@ -896,6 +868,7 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
     state.attempt += 1
     if (level.shots >= 0) state.shotsLeft -= 1
     predicted = []
+    predictKey = ''
     dragging = false
     audio.explode(0.4)
     audio.tone(220 + power * 220, true)
@@ -909,9 +882,13 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
   }
 
   function nextLevel(): void {
-    const next = Math.min(LEVELS.length - 1, state.level + 1)
-    state = createInitialState(next, state.score, state.collected)
+    if (state.level === LEVEL_COUNT - 1) {
+      state = createInitialState(0, 0, 0)
+    } else {
+      state = createInitialState(state.level + 1, state.score, state.collected)
+    }
     syncLevel()
+    unlockLevel(state.level)
     clearSave(AUTO_SAVE_KEY)
   }
 
@@ -935,23 +912,54 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
     syncLevel()
   }
 
+  function openLevelSelect(): void {
+    levelPage = Math.floor(Math.min(progress.maxReached, LEVEL_COUNT - 1) / PAGE_SIZE)
+    state.phase = 'levels'
+    dragging = false
+    predicted = []
+    predictKey = ''
+  }
+
   function onPointerDown(e: PointerEvent): void {
     e.preventDefault()
     audio.ensure()
     const p = toWorld(e.clientX, e.clientY)
+    if (state.phase === 'levels') {
+      const b = buttons.find((x) => hit(x, p))
+      if (!b) return
+      if (b.id === 'page-prev') levelPage = Math.max(0, levelPage - 1)
+      else if (b.id === 'page-next') levelPage = Math.min(Math.floor((LEVEL_COUNT - 1) / PAGE_SIZE), levelPage + 1)
+      else if (b.id === 'levels-back') state.phase = saved ? 'resume' : 'intro'
+      else if (b.id.startsWith('level:')) {
+        const target = Number(b.id.slice(6))
+        if (target <= progress.maxReached) startLevel(target)
+      }
+      return
+    }
     if (state.phase === 'resume') {
       const b = buttons.find((x) => hit(x, p))
       if (b?.id === 'resume') resumeAuto()
-      if (b?.id === 'new') discardAuto()
+      else if (b?.id === 'new') discardAuto()
+      else if (b?.id === 'levels') openLevelSelect()
       return
     }
     if (state.phase === 'win' || state.phase === 'lose') {
       const b = buttons.find((x) => hit(x, p))
       if (b?.id === 'retry') retryLevel()
-      if (b?.id === 'next') nextLevel()
+      else if (b?.id === 'next') nextLevel()
+      else if (b?.id === 'levels') openLevelSelect()
       return
     }
     if (state.phase === 'intro') {
+      const b = buttons.find((x) => hit(x, p))
+      if (b?.id === 'start') {
+        state.phase = 'aim'
+        return
+      }
+      if (b?.id === 'levels') {
+        openLevelSelect()
+        return
+      }
       state.phase = 'aim'
       return
     }
@@ -996,7 +1004,7 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
     ctx.fillRect(0, 0, cssW, cssH)
     ctx.fillStyle = 'rgba(200,220,255,0.5)'
     let seed = state.level * 977 + 13
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 90; i += 1) {
       seed = (seed * 137 + 91) % 997
       const sx = (seed % 1000) / 1000 * cssW
       const sy = ((seed >> 3) % 1000) / 1000 * cssH
@@ -1015,6 +1023,14 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
     const r = b.r * scale
     switch (b.kind) {
       case 'gravity': {
+        // 叠加场用 lighter 混合：两颗引力井靠近时交叠区域更亮，玩家可直观看出合力叠加。
+        ctx.globalCompositeOperation = 'lighter'
+        const halo = ctx.createRadialGradient(s.x, s.y, r * 0.4, s.x, s.y, r * 2.2)
+        halo.addColorStop(0, 'rgba(57,168,255,0.18)')
+        halo.addColorStop(1, 'rgba(57,168,255,0)')
+        ctx.fillStyle = halo
+        ctx.beginPath(); ctx.arc(s.x, s.y, r * 2.2, 0, Math.PI * 2); ctx.fill()
+        ctx.globalCompositeOperation = 'source-over'
         const g = ctx.createRadialGradient(s.x, s.y, r * 0.2, s.x, s.y, r)
         g.addColorStop(0, '#bfe9ff')
         g.addColorStop(0.55, '#39a8ff')
@@ -1059,7 +1075,7 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
         ctx.save()
         ctx.translate(s.x, s.y)
         ctx.rotate(state.elapsed * 2)
-        for (let k = 0; k < 4; k++) {
+        for (let k = 0; k < 4; k += 1) {
           ctx.rotate(Math.PI / 2)
           ctx.fillRect(-r * 0.12, -r * 0.9, r * 0.24, r * 1.8)
         }
@@ -1119,8 +1135,6 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
       ctx.strokeStyle = 'rgba(255,120,140,0.85)'
       ctx.lineWidth = 3
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(dp.x, dp.y); ctx.stroke()
-      const v = aimVector(level.anchor, drag)
-      const power = powerFromPull(v.len)
       // 预测虚线
       ctx.fillStyle = 'rgba(120,220,255,0.7)'
       for (const pt of predicted) {
@@ -1128,6 +1142,8 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
         ctx.beginPath(); ctx.arc(sp.x, sp.y, 3, 0, Math.PI * 2); ctx.fill()
       }
       // 力度条（贴在锚点上方，避免被底部安全区/橡皮筋遮挡）
+      const v = aimVector(level.anchor, drag)
+      const power = powerFromPull(v.len)
       const barW = 180
       const bx = cssW / 2 - barW / 2
       const by = a.y - 84
@@ -1140,12 +1156,10 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
   }
 
   function drawHud(): void {
-    // 分数与连击由宿主 FocusStage 的 DOM HUD 负责（左上分数/连击、右上暂停），
-    // 本画布不再重复绘制分数；关卡标题与提示居中于顶部第二行，避开两侧宿主控件。
     ctx.textAlign = 'center'
     ctx.fillStyle = 'rgba(234,242,255,0.92)'
     ctx.font = '700 20px system-ui, sans-serif'
-    ctx.fillText(`第 ${state.level + 1}/13 关 · ${level.title}`, cssW / 2, 34)
+    ctx.fillText(`第 ${state.level + 1}/${LEVEL_COUNT} 关 · ${level.title}`, cssW / 2, 34)
     ctx.font = '15px system-ui, sans-serif'
     ctx.fillStyle = '#9fb4d8'
     ctx.fillText(level.hint, cssW / 2, 60)
@@ -1161,9 +1175,9 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
     ctx.fillStyle = 'rgba(5,6,13,0.78)'
     ctx.fillRect(0, 0, cssW, cssH)
     const w = Math.min(320, cssW - 40)
-    const h = 240
+    const h = 150 + actions.length * 54 + 24
     const x = (cssW - w) / 2
-    const y = (cssH - h) / 2
+    const y = Math.max(20, (cssH - h) / 2)
     ctx.fillStyle = 'rgba(14,19,36,0.92)'
     ctx.strokeStyle = 'rgba(140,180,255,0.25)'
     ctx.beginPath()
@@ -1191,6 +1205,61 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
     })
   }
 
+  function drawLevelSelect(): void {
+    ctx.fillStyle = 'rgba(5,6,13,0.86)'
+    ctx.fillRect(0, 0, cssW, cssH)
+    ctx.textAlign = 'center'
+    ctx.fillStyle = '#eaf2ff'
+    ctx.font = '700 22px system-ui, sans-serif'
+    ctx.fillText('选择关卡', cssW / 2, 80)
+    ctx.font = '15px system-ui, sans-serif'
+    ctx.fillStyle = '#9fb4d8'
+    ctx.fillText(`已解锁 ${progress.maxReached + 1}/${LEVEL_COUNT} · 第 ${levelPage + 1} 页`, cssW / 2, 112)
+
+    buttons = []
+    const cols = 2
+    const bw = 380
+    const bh = 120
+    const gapX = 40
+    const gapY = 34
+    const x0 = (WORLD_W - cols * bw - gapX) / 2
+    const y0 = 190
+    const start = levelPage * PAGE_SIZE
+    for (let i = 0; i < PAGE_SIZE; i += 1) {
+      const idx = start + i
+      if (idx >= LEVEL_COUNT) break
+      const col = i % cols
+      const row = Math.floor(i / cols)
+      const x = x0 + col * (bw + gapX)
+      const y = y0 + row * (bh + gapY)
+      const unlocked = idx <= progress.maxReached
+      buttons.push({ id: `level:${idx}`, x, y, w: bw, h: bh, label: `${idx + 1}`, locked: !unlocked })
+      const sp = screen(x, y)
+      ctx.fillStyle = unlocked ? 'rgba(90,140,255,0.35)' : 'rgba(80,88,110,0.35)'
+      ctx.beginPath(); ctx.roundRect(sp.x, sp.y, bw * scale, bh * scale, 16)
+      ctx.fill()
+      ctx.fillStyle = unlocked ? '#eaf2ff' : '#6b7389'
+      ctx.font = '700 22px system-ui, sans-serif'
+      ctx.fillText(unlocked ? `${idx + 1}` : `🔒 ${idx + 1}`, sp.x + (bw * scale) / 2, sp.y + (bh * scale) / 2 + 8)
+    }
+
+    const nav = [
+      { id: 'page-prev', label: '上一页', x: 100, y: 780, w: 280, h: 118 },
+      { id: 'page-next', label: '下一页', x: 620, y: 780, w: 280, h: 118 },
+      { id: 'levels-back', label: '返回', x: 360, y: 950, w: 280, h: 118 }
+    ]
+    for (const b of nav) {
+      buttons.push({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h, label: b.label })
+      const sp = screen(b.x, b.y)
+      ctx.fillStyle = 'rgba(90,140,255,0.30)'
+      ctx.beginPath(); ctx.roundRect(sp.x, sp.y, b.w * scale, b.h * scale, 14)
+      ctx.fill()
+      ctx.fillStyle = '#eaf2ff'
+      ctx.font = '16px system-ui, sans-serif'
+      ctx.fillText(b.label, sp.x + (b.w * scale) / 2, sp.y + (b.h * scale) / 2 + 8)
+    }
+  }
+
   function drawParticles(dt: number): void {
     particles = particles.filter((p) => p.life > 0)
     for (const p of particles) {
@@ -1208,35 +1277,52 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
   function render(dt: number): void {
     buttons = []
     drawBackground()
-    for (const b of level.bodies) drawBody(b)
-    if (state.phase === 'aim' || state.phase === 'fly') drawShip()
-    if (state.phase === 'aim') drawAim()
-    drawParticles(dt)
-    drawHud()
+    if (state.phase !== 'levels') {
+      for (const b of level.bodies) drawBody(b)
+      if (state.phase === 'aim' || state.phase === 'fly') drawShip()
+      if (state.phase === 'aim') drawAim()
+      drawParticles(dt)
+      drawHud()
+    }
 
     if (state.phase === 'intro') {
-      panel('挽星弓', ['按住锚点向后拖拽，松手发射', '借恒星引力飞向星门，点屏幕继续'], [{ id: 'skip', label: '开始游戏' }])
+      panel('挽星弓', ['按住锚点向后拖拽，松手发射', '借恒星引力飞向星门'], [
+        { id: 'start', label: '开始游戏' },
+        { id: 'levels', label: '选择关卡' }
+      ])
     } else if (state.phase === 'resume') {
       const meta = readSaveMeta(AUTO_SAVE_KEY)
       panel('继续上一局', [meta ? `存档于 ${meta.label}` : '上次对局未完成', `第 ${state.level + 1} 关 · 分数 ${state.score}`], [
         { id: 'resume', label: '继续上一局' },
-        { id: 'new', label: '开始新局' }
+        { id: 'new', label: '开始新局' },
+        { id: 'levels', label: '选择关卡' }
       ])
+    } else if (state.phase === 'levels') {
+      drawLevelSelect()
     } else if (state.phase === 'win') {
-      const last = state.level === LEVELS.length - 1
+      const last = state.level === LEVEL_COUNT - 1
       panel(last ? '通关终局星系！' : '命中星门！', [`得分 ${state.score} · 连击峰值 ×${comboDisplayMult(state.bestCombo)}`, `收集星尘 ${state.collected}`], [
         { id: 'next', label: last ? '再来一轮' : '下一关' },
-        { id: 'retry', label: '重试本关' }
+        { id: 'retry', label: '重试本关' },
+        { id: 'levels', label: '选择关卡' }
       ])
     } else if (state.phase === 'lose') {
-      panel('星箭失落了', [`得分 ${state.score}`, '调整角度与力度再试一次'], [{ id: 'retry', label: '重试本关' }])
+      panel('星箭失落了', [`得分 ${state.score}`, '调整角度与力度再试一次'], [
+        { id: 'retry', label: '重试本关' },
+        { id: 'levels', label: '选择关卡' }
+      ])
     }
   }
 
   function loop(now: number): void {
     if (!alive) return
     if (!last) last = now
-    const dt = Math.min((now - last) / 1000, 0.05)
+    const frameDt = now - last
+    if (frameDt > 0 && frameDt < 500) {
+      fpsWindow.push(1000 / frameDt)
+      if (fpsWindow.length > 120) fpsWindow.shift()
+    }
+    const dt = Math.min(frameDt / 1000, 0.05)
     last = now
     if (!paused && state.phase === 'fly') {
       acc += dt
@@ -1306,13 +1392,13 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
     resumeAuto,
     discardAuto,
     autoSaveNow: persistIfNonEmpty,
+    forceSave: () => persistSave(serializeSave(state), AUTO_SAVE_KEY),
     clearAutoSave: () => clearSave(AUTO_SAVE_KEY),
     state: () => state,
     debug: {
       getLevel: () => level,
       setLevel(i: number): void {
-        state = createInitialState(i, state.score, state.collected)
-        syncLevel()
+        startLevel(i)
       },
       forcePortal(): void {
         const portalBody = level.bodies.find((b) => b.kind === 'portal' || b.kind === 'moving')
@@ -1333,7 +1419,16 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
       phase: () => state.phase,
       isPaused: () => paused,
       anchorScreen: () => screen(level.anchor.x, level.anchor.y),
-      layout: () => ({ scale, ox, oy, cssW, cssH })
+      predictions: () => predicted,
+      openLevels: () => { openLevelSelect(); drawLevelSelect() },
+      nextPage: () => {
+        levelPage = Math.min(Math.floor((LEVEL_COUNT - 1) / PAGE_SIZE), levelPage + 1)
+        drawLevelSelect()
+      },
+      levelButtons: () => buttons.map((b) => ({ ...b })),
+      fps: () => fpsWindow.length ? fpsWindow.reduce((sum, value) => sum + value, 0) / fpsWindow.length : 0,
+      layout: () => ({ scale, ox, oy, cssW, cssH }),
+      progress: () => progress
     }
   }
 }
