@@ -39,7 +39,7 @@ index.vue（宿主，NEON 数组追加一条 GameDef，动态 import）
 - 失败条件：撞实体、被黑洞吞噬、飞出世界边界、发射次数耗尽、限时归零。
 - 过关条件：进入 portal 捕获半径（moving 靶心取当前位置）。
 
-## 五、关卡与节奏（13 关，配置表集中管理）
+## 五、关卡与节奏（v1 初始草案：13 关；最终 50 关方案见第十二节，本节仅保留历史设计意图）
 | 关 | 主题 | 机制引入 | 资源约束 |
 | --- | --- | --- | --- |
 | 1 | 启程直瞄 | 无引力，直线命中静态靶心 | 无限发、预测常驻 |
@@ -88,11 +88,50 @@ index.vue（宿主，NEON 数组追加一条 GameDef，动态 import）
 4. 根 README 小游戏清单补一句本游戏。
 5. 不改 registry、路由、ToolRunnerView、搜索、SW、根 manifest、public/icons、其它工具。
 
-## 十、测试与验收方案
-- 纯逻辑 node 单测：引力加速度与软化、固定步长推进、预测点列、捕获/软碰撞、combo 窗口与倍率、通关/失败判定、13 关配置完整性、快照 serialize↔validate 往返 + 损坏/版本不符回退。
+## 十、测试与验收方案（v1 草案；50 关最终测试口径见第十二节与 postmortem）
+- 纯逻辑 node 单测：引力加速度与软化、固定步长推进、预测点列、捕获/软碰撞、combo 窗口与倍率、通关/失败判定、关卡配置完整性、快照 serialize↔validate 往返 + 损坏/版本不符回退。
 - 三视口 Playwright：进入即玩、拖拽松手发射、驱动第 1 关过关进入下一关、分数/combo/关卡变化；hidden 自动暂停且进度不丢；reload 弹续玩、继续还原、新局清快照；断网可玩；零横向溢出、无 pageerror、零外部资源请求。
 - 回归：其它 8 个子游戏选卡/进入不受影响；合集高分库读写正常。
 
 ## 十一、部署与回滚
 - 随 PWA 常规 EdgeOne Pages 构建发布；游戏 chunk 走 Vite 动态分包，纳入既有 SW 预缓存。
 - 回滚：单 commit  revert 本目录与 index.vue 追加项即可；无数据迁移、无 schema 变更。
+
+## 十二、v2.0 增补：13 关 → 50 关架构重做（2026-10-22）
+
+### 12.1 目标与边界
+- 关卡数由 13 扩展到 **50**；新增有界饱和难度模型、确定性离线生成器、可解性求解器、旧快照迁移与 50 关选关 UI。
+- 不改变合集形态：`gravity-sling` 仍是 `mini-games` 内嵌子游戏，**不新增顶层工具**，`verify:tools` 保持 **35**；不改 registry、路由、ToolRunnerView、搜索、SW 策略、根 manifest 与 public/icons。
+- 运行时仍零第三方依赖；不新增图片、音频、字体、wasm 或模型外链。
+
+### 12.2 分层重构
+- `game/level-design.ts`：世界常数、类型、难度模型、确定性种子生成器与走廊净空约束；纯设计层，不碰 DOM、音频、渲染。
+- `game/levels.generated.ts`：离线脚本生成的 `LEVELS` 与 `SOLUTIONS`；生成物由 `scripts/generate-gravity-sling-levels.mjs` 重写，禁止手工编辑。
+- `game/sling-core.ts`：保留运行时物理、状态机、渲染、输入、音频、快照、进度、预测与离线求解器；node 测试直接引用其中纯函数。
+
+### 12.3 难度模型
+- 感知难度：`rawD = 1.1^(n-1)`；有界饱和：`saturation = min(1, rawD/(rawD+6))`。
+- 阶段：教学 `0–3`、上升 `4–17`、硬核 `18–34`、后期 `35–49`。
+- 硬上限：引力星 ≤4、陨石 ≤6、推斥星 ≤2、黑洞 ≤2；非星尘天体总数 ≤12。
+- 旋钮收敛：星门半径 72 → 44；前 4 关不限次，之后最少 2 发；前 11 关不限时，之后最少 22s；`gravityScale` 只在 `GRAVITY_G` 上下 ±5% 浮动。
+- 动目标门从 index ≥25 引入；周期门 15–24 引入，35 后按奇偶与移动门混合。
+
+### 12.4 可解性架构
+- 确定性种子：每关 `index0 → fixed seed`，生成器使用 `mulberry32` 确定性随机数。
+- 求解器复用运行时 `gravityAccel/stepFrame`，禁止另写第二套物理；粗网格 21 角度 ×14 力度，局部细化角度 ±5°、力度 ±0.08；求解上限 1200 步，离线脚本单关超时 650ms。
+- 人类可达裕度：最小角度窗口 **4°**、最小门体净空 **6 世界像素**；实体障碍避开锚点—星门走廊。
+- 生成器对每关换 seed 重试直到求解通过；50 关记录解、角度、力度、步数、窗口、净空写入 `docs/level-evidence.json`，并由 node 单测复放断言。
+
+### 12.5 多体合力与性能
+- 既有 `gravityAccel` 本就遍历全部引力/推斥/黑洞体做 `ax += ...; ay += ...` 矢量叠加；本轮新增 `MAX_ACCEL=15000` 净加速度上限，防止高密度近场数值爆炸。
+- 预测缓存键 = 关卡 + 拖拽坐标取整 + 力度 + 已流逝时间；拖拽矢量未变不重复跑 150 步预测。
+- 天体数 >9 时粒子数量降到 60%；后期关不继续堆天体数量，而靠种类、运动、限次与时限提难度。
+
+### 12.6 数据迁移
+- 自动快照键名 `fangzi:gravity-sling:auto-save:v1` 保持不变；内部 `SAVE_VERSION=2`、当前链 `gravity-sling:levels:50:v2`，旧链 `gravity-sling:levels:13:v1` 可被 `validateSave` 识别并迁移。
+- 旧 v1 快照保留 `score/combo/bestCombo/collected/collectedIds/assists/elapsed/ship`，关卡号钳制到 0–49，输出新 v2 载荷；非法版本/tool/chain/损坏 JSON 安全回退 null。
+- 新增独立进度键 `fangzi:gravity-sling:progress:v1`，只存 `maxReached/bestScore`；合集高分库 `fz-mini-games-v1` 的 `gravity-sling:classic` 不变。
+
+### 12.7 UI 与验收
+- 画布内新增选关阶段：每页 6 关、两列，未解锁置灰，共 9 页；按钮高度 ≥44 CSS px。
+- 验收：50 关配置完整、50 关记录解全部复放命中、难度饱和单调、旧档迁移不丢进度；三视口覆盖首关主链路、第 40 关高密度、第 50 关手机高密度、选关分页、hidden 暂停、reload 续玩与断网二次加载。
