@@ -531,3 +531,10 @@ fangzi/
 - **目标用户**：被客户拖欠尾款的设计师/程序员/翻译/摄影师、一人公司/小微工作室、催款不好意思开口且没留痕的自由职业者、年底应收一堆现金流紧张的人。
 - **计费**：免费增值——最多 3 笔应收台账、账龄看板、梯度话术复制免费；专业版**买断 ¥19.90**，解锁不限客户/批量 CSV/JSON 导出与证据包 PDF 导出。
 - **位置**：`src/tools/payment-chaser/`，路由 `/#/t/payment-chaser`；文档见该目录 `docs/`（guide/postmortem、PC·平板·手机真实截图）。L 档：纯逻辑下沉 `lib/`（aging 账龄分桶/模板渲染、templates 三档话术、evidence 导出），新增 `test/payment-chaser.test.ts` 7 例；`npm run verify:tools` = 34；独立 IndexedDB 库 `fz-payment-chaser-v1`，不碰既有任何键；零新增 wasm/大模型，无 SW 改动。
+
+## 作业照片成册打印（photo-sheet-print · 2026-10-22）
+
+- **简介**：把群里随手拍的作业/试卷照片批量整理成 A4 成册。相册多选或拍照导入，自动校正手机照片方向、降采样并剥离元数据；每张可旋转、左右排序、加备注（学科/日期/错题）、删除；可选纵向/横向、每页列×行、页边距、图间距与页眉标题，实时预览分页；浏览器整册打印或导出 150 DPI 成册 PDF（离屏 canvas 绘制→JPEG→pdf-lib 排版 A4）。照片全程本地 IndexedDB、无后端、无账号、不上传。
+- **目标用户**：每天整理群里作业照片的双职工家长、想把试卷/作业按学科日期归档留存错题的家长、需要多图拼 A4 省纸打印且在意照片隐私的人。
+- **计费**：免费增值——最多 10 张照片、基础 A4 排版与本地预览免费；专业版**买断 ¥15.00**，解锁不限张数、多页成册、排序/旋转/备注、高清 PDF 导出与整册打印。
+- **位置**：`src/tools/photo-sheet-print/`，路由 `/#/t/photo-sheet-print`；文档见该目录 `docs/`（guide/postmortem、PC·平板·手机真实截图、005 阶段文档在 `docs/stage/`）。M 档：纯逻辑下沉 `lib/layout.ts`（分页/单元格/旋转/contain 适配），复用 `reusable-module/indexeddb-kv` 与 `image-redraw`，新增 `test/photo-sheet-print.test.ts` 10 例；`npm run verify:tools` = 35；独立 IndexedDB 库 `fz-photo-sheet-print-v1`，不碰既有任何键；零新增 wasm/大模型，无 SW 改动。
