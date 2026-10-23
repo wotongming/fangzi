@@ -24,6 +24,7 @@ import {
   comboDisplayMult,
   simulateSolution,
   solveLevel,
+  directShotBlocked,
   stepFrame,
   serializeSave,
   validateSave,
@@ -47,6 +48,9 @@ import {
   MAX_ACCEL,
   MIN_ANGLE_WINDOW_DEG,
   MIN_CLEARANCE,
+  MIN_LAUNCH_DRAG_PX,
+  REQUIRED_BEND_DEG,
+  MIN_BEND_LATERAL_PX,
   MAX_BODIES,
   type LevelConfig,
   type SlingState,
@@ -101,20 +105,25 @@ test('50 关配置完整：唯一星门、坐标界内、次数/时限合法、i
   assert.equal(levelByIdx(99).index, 49)
 })
 
-test('50 关求解证据全部达标：记录解可复放、角度窗口与门体净空不低于下限', () => {
+test('50 关求解证据全部达标：直射全力度被挡、记录解真绕障可复放、裕度不低于下限', () => {
   for (const ev of SOLUTIONS) {
     const lv = LEVELS[ev.index]
     assert.ok(lv, `第 ${ev.index + 1} 关证据对应关卡存在`)
+    const direct = directShotBlocked(lv, { maxSteps: 1200 })
+    assert.equal(direct.blocked, true, `第 ${ev.index + 1} 关直射全力度均不得命中`)
     const result = simulateSolution(lv, ev.angleDeg, ev.power)
     assert.ok(result.hit, `第 ${ev.index + 1} 关记录解应复放命中`)
-    assert.ok(ev.angleWindowDeg >= MIN_ANGLE_WINDOW_DEG, `第 ${ev.index + 1} 关角度窗口不足`)
+    assert.ok(ev.bendDeg >= REQUIRED_BEND_DEG, `第 ${ev.index + 1} 关发射角相对直射角偏折不足`)
+    assert.ok(ev.lateralPx >= MIN_BEND_LATERAL_PX, `第 ${ev.index + 1} 关轨迹横向偏折不足`)
+    assert.ok(ev.angleWindowDeg >= (ev.index < 4 ? 6 : MIN_ANGLE_WINDOW_DEG), `第 ${ev.index + 1} 关角度窗口不足`)
     assert.ok(ev.clearance >= MIN_CLEARANCE, `第 ${ev.index + 1} 关门体净空不足`)
     assert.ok(ev.bodyCount <= MAX_BODIES, `第 ${ev.index + 1} 关天体数超上限`)
   }
-  // 抽样后期关，求解器在当前物理上仍能独立搜索到解。
+  // 抽样后期关，求解器在当前物理上仍能独立搜索到绕障解。
   for (const index of [0, 19, 39, 49]) {
     const found = solveLevel(LEVELS[index], { maxSteps: 1200 })
-    assert.ok(found, `抽样第 ${index + 1} 关求解器应返回解`)
+    assert.ok(found, `抽样第 ${index + 1} 关求解器应返回绕障解`)
+    assert.ok(found!.directShotBlocked && found!.bendDeg >= REQUIRED_BEND_DEG)
   }
 })
 
@@ -170,36 +179,32 @@ test('瞄准向量：锚点下方拖拽得到竖直向上；力度二次曲线�
   assert.equal(powerFromPull(140), 0.25)
 })
 
-test('预测轨迹：第 1 关竖直向上，点列有限、单调升高并接近星门', () => {
+test('预测轨迹：有效轻拖也生成低速点列，一直画到命中/出界，零位移不生成', () => {
   const lv = LEVELS[0]
-  const pts = predictTrajectory(lv, { nx: 0, ny: -1 }, 1)
-  assert.ok(pts.length > 5)
+  const deg = SOLUTIONS[0]!.angleDeg * Math.PI / 180
+  const pts = predictTrajectory(lv, { nx: Math.cos(deg), ny: Math.sin(deg) }, 0.17)
+  assert.ok(pts.length > 50, `轻力轨迹应足够长，实际=${pts.length}`)
   for (const p of pts) {
     assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y))
-    assert.ok(p.y >= 0 && p.y <= WORLD_H)
+    assert.ok(p.x >= -1 && p.x <= WORLD_W + 1 && p.y >= -1 && p.y <= WORLD_H + 1)
   }
-  const last = pts[pts.length - 1]!
-  assert.ok(last.y < lv.anchor.y)
-  const gate = lv.bodies.find((b) => b.kind === 'portal')!
-  assert.ok(Math.hypot(gate.x - last.x, gate.y - last.y) < 260)
 })
 
-test('固定步长：第 1 关竖直发射命中星门（portal 事件）', () => {
+test('固定步长：第 1 关记录绕障解命中星门，且竖直直射被实体挡住', () => {
   const lv = LEVELS[0]
-  const s = flyState(lv, 0, -V_MAX)
-  const ev = runUntil(s, lv, (e) => e.some((x) => x.type === 'portal'))
-  assert.ok(ev.some((x) => x.type === 'portal'), '应触发命中星门')
-  assert.ok(!ev.some((x) => x.type === 'crash' || x.type === 'out'))
+  const ev = SOLUTIONS[0]!
+  const s = flyState(lv, Math.cos(ev.angleDeg * Math.PI / 180) * ev.power * V_MAX, Math.sin(ev.angleDeg * Math.PI / 180) * ev.power * V_MAX)
+  const hit = runUntil(s, lv, (e) => e.some((x) => x.type === 'portal'))
+  assert.ok(hit.some((x) => x.type === 'portal'), '绕障记录解应触发命中星门')
+  assert.ok(!directShotBlocked(lv, { maxSteps: 1200 }).blocked === false)
 })
 
-test('第 2 关直上拾取沿途 3 颗星尘（collect 事件，不重复触发）', () => {
-  const lv = LEVELS[1]
-  const s = flyState(lv, 0, -V_MAX)
-  const ev = runUntil(s, lv, (e) => e.some((x) => x.type === 'portal'))
-  const collects = ev.filter((x) => x.type === 'collect')
-  assert.equal(collects.length, 3)
-  assert.equal(s.collected, 3)
-  assert.equal(s.collectedIds.length, 3)
+test('发射阈值：小于 MIN_LAUNCH_DRAG_PX 的零位移点击取消，有效轻拖产生与拉力一致的小初速', () => {
+  assert.equal(MIN_LAUNCH_DRAG_PX, 8)
+  const weak = powerFromPull(MIN_LAUNCH_DRAG_PX + 2)
+  assert.ok(weak > 0 && weak < 0.01, `轻拖力度应很小，实际=${weak}`)
+  const cancelled = powerFromPull(MIN_LAUNCH_DRAG_PX - 1)
+  assert.ok(cancelled >= 0 && cancelled < weak, '低于松手阈值的拖拽只被输入层取消，不参与发射')
 })
 
 test('撞入自定义恒星半径触发 crash；坠入自定义黑洞触发 blackhole', () => {

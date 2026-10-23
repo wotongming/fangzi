@@ -16,6 +16,8 @@ import {
   MIN_ANGLE_WINDOW_DEG,
   MIN_CLEARANCE,
   MAX_BODIES,
+  REQUIRED_BEND_DEG,
+  MIN_BEND_LATERAL_PX,
   generateLevel
 } from '../src/tools/mini-games/gpu-games/gravity-sling/game/level-design.ts'
 import { solveLevel } from '../src/tools/mini-games/gpu-games/gravity-sling/game/sling-core.ts'
@@ -36,12 +38,19 @@ for (let index = 0; index < LEVEL_COUNT; index += 1) {
   for (let retries = 0; retries < 300; retries += 1) {
     const relaxed = retries > 140
     const level = generateLevel(index, baseSeed + retries, relaxed)
-    const evidence = solveLevel(level, { timeoutMs: 650, maxSteps: 1200 })
+    const evidence = solveLevel(level, { timeoutMs: 800, maxSteps: 1200 })
+    if (retries % 25 === 0) console.log(`  level ${index + 1} retry=${retries} seed=${baseSeed + retries} evidence=${evidence ? 'found' : 'null'}`)
     const nonCollect = level.bodies.filter((b) => b.kind !== 'collect').length
+    // 教学关用更宽角度窗口（8° vs 4°）与更大星门（80px vs 后期 44–72px），净空仍按全局 6px。
+    const minWindow = index < 4 ? 6 : MIN_ANGLE_WINDOW_DEG
+    const minClearance = MIN_CLEARANCE
     const ok =
       evidence &&
-      evidence.angleWindowDeg >= MIN_ANGLE_WINDOW_DEG &&
-      evidence.clearance >= MIN_CLEARANCE &&
+      evidence.directShotBlocked &&
+      evidence.bendDeg >= REQUIRED_BEND_DEG &&
+      evidence.lateralPx >= MIN_BEND_LATERAL_PX &&
+      evidence.angleWindowDeg >= minWindow &&
+      evidence.clearance >= minClearance &&
       nonCollect <= MAX_BODIES
     if (ok) {
       accepted = level

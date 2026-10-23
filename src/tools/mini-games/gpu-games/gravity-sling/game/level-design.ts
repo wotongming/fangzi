@@ -19,7 +19,20 @@ export const FIXED_DT = 1 / 120
 export const MAX_FRAME_STEPS = 4
 export const COMBO_WINDOW_S = 1.5
 export const COMBO_MAX_MULT = 4
-export const PREDICT_STEPS = 150
+/**
+ * 预测轨迹积分上限。FIXED_DT=1/120s，4800 步 = 40s；
+ * 对有效轻拖（约 60 世界像素以上，初速约 38px/s）足够从锚点横贯约 1500 世界像素，
+ * 不再使用 150 步短截断。该值只用于防数值死循环，正常会先命中天体/星门或飞出世界。
+ */
+export const PREDICT_MAX_STEPS = 4800
+/** 兼容旧命名：运行时预测轨迹不再使用 150 步短截断。 */
+export const PREDICT_STEPS = PREDICT_MAX_STEPS
+/** 零位移误触阈值：拖拽距离小于该值松手只取消，不发射；任何超过它的有效轻拖都按小力度发射。 */
+export const MIN_LAUNCH_DRAG_PX = 8
+/** 记录解与锚点→星门直射方向的最小偏角，防止擦边直线偷鸡。 */
+export const REQUIRED_BEND_DEG = 18
+/** 记录轨迹相对直射射线的最小横向位移，作为引力偏折的可测裕度。 */
+export const MIN_BEND_LATERAL_PX = 60
 export const AUTO_SAVE_KEY = 'fangzi:gravity-sling:auto-save:v1'
 export const PROGRESS_KEY = 'fangzi:gravity-sling:progress:v1'
 export const SAVE_VERSION = 2
@@ -129,6 +142,14 @@ export interface SolveEvidence {
   clearance: number
   bodyCount: number
   portalKind: BodyKind
+  /** 锚点→星门初始方向的直射角（度）。 */
+  directAngleDeg: number
+  /** 记录发射角相对直射角的偏折量（度）。 */
+  bendDeg: number
+  /** 记录轨迹相对直射射线的最大横向位移（世界像素）。 */
+  lateralPx: number
+  /** 直射方向全力度扫描均不命中星门。 */
+  directShotBlocked: boolean
 }
 
 // —— 难度模型：D(n)=1.1^(n-1)，再经饱和函数映射到各旋钮 ——
@@ -237,34 +258,29 @@ function collect(id: number, x: number, y: number, r = 26): Body {
 }
 
 function titleFor(index0: number): string {
-  if (index0 === 0) return '启程直瞄'
-  if (index0 === 1) return '沿途收星'
-  if (index0 === 2) return '引力偏折'
-  if (index0 === 3) return '单星绕弯借力'
+  if (index0 === 0) return '第一次绕障'
+  if (index0 === 1) return '绕边收星'
+  if (index0 === 2) return '借弯入边门'
+  if (index0 === 3) return '缝隙绕行'
   const names = ['双星接力', '三连借力链', '陨石回廊', '推斥暗流', '周期星门', '动目标预判', '黑洞边缘', '密集星区']
   return `${names[index0 % names.length]} · ${index0 + 1}`
 }
 
 function hintFor(d: DifficultyModel): string {
-  if (d.stage === 'tutorial') return '按住锚点向后拖拽，松手把星箭射向星门'
+  if (d.stage === 'tutorial') return '挡路天体已封死直线；从侧边绕过去，借引力弯进星门'
   if (d.blackhole > 0) return '黑洞会吞噬星箭，借恒星引力绕过危险区'
   if (d.repel > 0) return '红色推斥星会推开星箭，顺势改向切入星门'
   if (d.moving) return '星门沿椭圆移动，提前量要算在前面'
   if (d.periodic) return '星门周期性开合，等窗口亮起再发射'
-  if (d.gravity > 0) return '多颗恒星叠加引力会改变轨迹，借预测虚线微调角度'
-  return '穿过陨石带，稳定命中星门'
+  if (d.gravity > 0) return '多颗恒星叠加引力会改变轨迹，借预测虚线绕开挡路天体'
+  return '挡路天体已封死直线；观察预测虚线，绕开陨石稳定命中星门'
 }
 
-function pointSegmentDistance(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
-  const dx = bx - ax
-  const dy = by - ay
-  const len2 = dx * dx + dy * dy
-  if (len2 <= 1e-6) return Math.hypot(px - ax, py - ay)
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2))
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
-}
-
-function clearForPlacement(
+/**
+ * 额外天体位置约束：与锚点/星门保持安全距离，互相不重叠；
+ * 不再主动避让锚点→星门走廊——走廊中央由 mandatory blocker 封死，额外天体可在周围增加绕障复杂度。
+ */
+function clearForExtraBody(
   bodies: Body[],
   candidate: Body,
   portalBody: Body,
@@ -274,14 +290,10 @@ function clearForPlacement(
   if (da < 320) return false
   const portalCenter = portalBody.orbit ? { x: portalBody.orbit.cx, y: portalBody.orbit.cy } : portalBody
   const dp = Math.hypot(candidate.x - portalCenter.x, candidate.y - portalCenter.y)
-  if (dp < portalBody.r + candidate.r + 30) return false
-  // 保留一条从锚点到星门的可解走廊：实体障碍不得压在直线走廊上；引力星可贴走廊侧边。
-  const corridor = pointSegmentDistance(candidate.x, candidate.y, anchor.x, anchor.y, portalCenter.x, portalCenter.y)
-  const corridorMargin = candidate.kind === 'gravity' ? 80 : 125
-  if (corridor < corridorMargin) return false
+  if (dp < portalBody.r + candidate.r + 40) return false
   for (const b of bodies) {
     if (b.kind === 'collect') continue
-    if (Math.hypot(candidate.x - b.x, candidate.y - b.y) < candidate.r + b.r + 22) return false
+    if (Math.hypot(candidate.x - b.x, candidate.y - b.y) < candidate.r + b.r + 24) return false
   }
   return true
 }
@@ -290,60 +302,66 @@ function clearForPlacement(
 export function generateLevel(index0: number, seed = index0 * 1_000_003 + 7, relaxed = false): LevelConfig {
   const d = difficultyModel(index0)
 
-  // 前 4 关保留已试玩验证的平缓教学布局，后续关由种子模型生成。
+  // 前 4 关统一教“绕障”：直射通道必须被实体挡住，新手先学从侧边切入。
   if (index0 === 0) {
     return {
       index: 0,
-      title: '启程直瞄',
-      hint: '按住锚点向后拖拽，松手把星箭射向星门',
+      title: '第一次绕障',
+      hint: '大恒星堵死了直线；先从侧边绕过去，预测虚线会显示弯曲轨迹',
       shots: -1,
       timeLimit: 0,
       predictAlways: true,
       anchor: ANCHOR,
-      bodies: [portal(1, 500, 300, d.portalRadius)],
+      bodies: [portal(1, 500, 300, 90), gravity(2, 500, 850, 74, 1)],
       gravityScale: d.gravityScale
     }
   }
   if (index0 === 1) {
     return {
       index: 1,
-      title: '沿途收星',
-      hint: '沿直线微调角度，顺手拾取沿途星尘',
+      title: '绕边收星',
+      hint: '绕开挡路恒星，顺手收集侧边星尘，再弯向上方星门',
       shots: -1,
       timeLimit: 0,
       predictAlways: true,
       anchor: ANCHOR,
-      bodies: [collect(2, 500, 1080), collect(3, 500, 800), collect(4, 500, 560), portal(1, 500, 300, d.portalRadius)],
+      bodies: [
+        portal(1, 500, 300, 90),
+        gravity(2, 500, 850, 66, 1),
+        collect(3, 380, 1040),
+        collect(4, 620, 1040),
+        collect(5, 500, 620)
+      ],
       gravityScale: d.gravityScale
     }
   }
   if (index0 === 2) {
     return {
       index: 2,
-      title: '引力偏折',
-      hint: '恒星会把轨迹压弯，瞄得比星门略偏',
+      title: '借弯入边门',
+      hint: '从挡路恒星侧边切过，让引力把星箭带入侧方星门',
       shots: -1,
       timeLimit: 0,
       predictAlways: true,
       anchor: ANCHOR,
-      bodies: [gravity(2, 260, 760, 46), collect(3, 520, 560), portal(1, 740, 380, 70)],
+      bodies: [portal(1, 720, 360, 90), gravity(2, 610, 820, 62, 1), collect(3, 500, 590)],
       gravityScale: d.gravityScale
     }
   }
   if (index0 === 3) {
     return {
       index: 3,
-      title: '单星绕弯借力',
-      hint: '贴近恒星半圈再切出，绕过陨石抵达星门',
+      title: '缝隙绕行',
+      hint: '中心恒星封死直线，从左右缝隙绕向星门',
       shots: -1,
       timeLimit: 0,
-      predictAlways: false,
+      predictAlways: true,
       anchor: ANCHOR,
       bodies: [
-        gravity(2, 260, 720, 48),
-        asteroid(3, 340, 520, 36),
-        asteroid(4, 660, 520, 36),
-        portal(1, 500, 300, d.portalRadius)
+        portal(1, 500, 300, 90),
+        gravity(2, 500, 760, 66, 1),
+        asteroid(3, 310, 560, 34),
+        asteroid(4, 690, 560, 34)
       ],
       gravityScale: d.gravityScale
     }
@@ -365,8 +383,34 @@ export function generateLevel(index0: number, seed = index0 * 1_000_003 + 7, rel
   let nextId = 2
   const scale = relaxed ? 0.55 : 1
 
-  const place = (kind: 'gravity' | 'repel' | 'blackhole' | 'asteroid', count: number, radius: [number, number]): void => {
+  // 硬约束 1：锚点→星门直射通道中央必须有一个实体安全圆，否则任意直射线都会被撞停。
+  const portalCenter = portalBody.orbit ? { x: portalBody.orbit.cx, y: portalBody.orbit.cy } : portalBody
+  const directDx = portalCenter.x - ANCHOR.x
+  const directDy = portalCenter.y - ANCHOR.y
+  const directDist = Math.hypot(directDx, directDy)
+  const directUx = directDx / directDist
+  const directUy = directDy / directDist
+  const t = rand(rng, 0.38, 0.68)
+  const perpX = -directUy
+  const perpY = directUx
+  const offset = rand(rng, -18, 18)
+  const blockerX = ANCHOR.x + directDx * t + perpX * offset
+  const blockerY = ANCHOR.y + directDy * t + perpY * offset
+  const blockerKind =
+    d.blackhole > 0 && rng() < 0.18 ? 'blackhole' : d.asteroids > 0 && rng() < 0.55 ? 'asteroid' : 'gravity'
+  const blocker =
+    blockerKind === 'blackhole'
+      ? blackhole(nextId, blockerX, blockerY, rand(rng, 34, 38))
+      : blockerKind === 'asteroid'
+        ? asteroid(nextId, blockerX, blockerY, rand(rng, 34, 42))
+        : gravity(nextId, blockerX, blockerY, rand(rng, 50, 60), 1)
+  bodies.push(blocker)
+  nextId += 1
+
+  const nonCollectCount = (): number => bodies.filter((b) => b.kind !== 'collect').length
+  const place = (kind: 'gravity' | 'repel' | 'blackhole' | 'asteroid', rawCount: number, radius: [number, number]): void => {
     let placed = 0
+    const count = Math.max(0, Math.min(rawCount, MAX_BODIES - nonCollectCount()))
     for (let attempt = 0; attempt < 80 && placed < count; attempt++) {
       const x = rand(rng, 180, 820)
       const y = rand(rng, 520, 1060)
@@ -379,7 +423,7 @@ export function generateLevel(index0: number, seed = index0 * 1_000_003 + 7, rel
             : kind === 'blackhole'
               ? blackhole(nextId, x, y, r)
               : asteroid(nextId, x, y, r)
-      if (!clearForPlacement(bodies, candidate, portalBody, ANCHOR)) continue
+      if (!clearForExtraBody(bodies, candidate, portalBody, ANCHOR)) continue
       bodies.push(candidate)
       nextId += 1
       placed += 1

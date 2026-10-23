@@ -90,7 +90,7 @@ const NEON: GameDef[] = [
     id: 'gravity-sling',
     name: '挽星弓',
     icon: '🏹',
-    desc: '拖拽蓄力瞄准，借多星引力弹射，13 关命中星门',
+    desc: '向后拖拽蓄力，看预测虚线绕开陨石与黑洞，借多星引力弹弓，50 关命中星门',
     pro: false,
     difficulties: ['classic'],
     kind: 'gpu',

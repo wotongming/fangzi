@@ -23,6 +23,10 @@ import {
   COMBO_WINDOW_S,
   COMBO_MAX_MULT,
   PREDICT_STEPS,
+  PREDICT_MAX_STEPS,
+  MIN_LAUNCH_DRAG_PX,
+  REQUIRED_BEND_DEG,
+  MIN_BEND_LATERAL_PX,
   AUTO_SAVE_KEY,
   PROGRESS_KEY,
   SAVE_VERSION,
@@ -61,6 +65,10 @@ export {
   COMBO_WINDOW_S,
   COMBO_MAX_MULT,
   PREDICT_STEPS,
+  PREDICT_MAX_STEPS,
+  MIN_LAUNCH_DRAG_PX,
+  REQUIRED_BEND_DEG,
+  MIN_BEND_LATERAL_PX,
   AUTO_SAVE_KEY,
   PROGRESS_KEY,
   SAVE_VERSION,
@@ -184,7 +192,7 @@ export function predictTrajectory(
   level: LevelConfig,
   dir: { nx: number; ny: number },
   power: number,
-  steps: number = PREDICT_STEPS
+  steps: number = PREDICT_MAX_STEPS
 ): { x: number; y: number }[] {
   const ship = {
     x: level.anchor.x,
@@ -307,6 +315,22 @@ interface SimResult {
   hit: boolean
   steps: number
   clearance: number
+  /** 轨迹相对锚点→星门直射射线的最大横向位移（世界像素）。 */
+  lateralPx: number
+}
+
+function normalizeAngleDeg(deg: number): number {
+  let d = deg % 360
+  if (d > 180) d -= 360
+  if (d < -180) d += 360
+  return d
+}
+
+/** 供生成器/单测：求锚点→星门初始位置的直射角。 */
+export function directShotAngle(level: LevelConfig): number {
+  const portal = level.bodies.find((b) => b.kind === 'portal' || b.kind === 'moving')
+  const p = portal ? bodyPos(portal, 0) : { x: level.anchor.x, y: 200 }
+  return (Math.atan2(p.y - level.anchor.y, p.x - level.anchor.x) * 180) / Math.PI
 }
 
 function simulateLaunch(level: LevelConfig, angleDeg: number, power: number, maxSteps: number): SimResult {
@@ -324,24 +348,56 @@ function simulateLaunch(level: LevelConfig, angleDeg: number, power: number, max
   st.ship.vy = Math.sin(rad) * power * V_MAX
 
   const portal = level.bodies.find((b) => b.kind === 'portal' || b.kind === 'moving')
+  const directTarget = portal ? bodyPos(portal, 0) : { x: st.ship.x, y: 200 }
+  const directDx = directTarget.x - level.anchor.x
+  const directDy = directTarget.y - level.anchor.y
+  const directLen = Math.hypot(directDx, directDy) || 1
+  const directUx = directDx / directLen
+  const directUy = directDy / directLen
+  let lateralPx = 0
   for (let step = 1; step <= maxSteps; step += 1) {
     st.elapsed += FIXED_DT
     const ev = stepFrame(st, level, FIXED_DT, st.elapsed)
+    const dx = st.ship.x - level.anchor.x
+    const dy = st.ship.y - level.anchor.y
+    lateralPx = Math.max(lateralPx, Math.abs(dx * directUy - dy * directUx))
     if (ev.some((e) => e.type === 'portal')) {
-      const p = portal ? bodyPos(portal, st.elapsed) : { x: st.ship.x, y: st.ship.y }
-      const dist = Math.hypot(p.x - st.ship.x, p.y - st.ship.y)
-      return { hit: true, steps: step, clearance: portal ? portal.r + SHIP_R - dist : MIN_CLEARANCE }
+      // 门体净空不是“刚碰边”的余量：命中后继续沿真实物理积分一小段，
+      // 取轨迹穿入门心过程中的最小距离，避免低速弧线只擦边却误判为裕度充足。
+      let dist = portal ? Math.hypot(bodyPos(portal, st.elapsed).x - st.ship.x, bodyPos(portal, st.elapsed).y - st.ship.y) : 0
+      for (let peek = 0; peek < 36; peek += 1) {
+        stepFrame(st, level, FIXED_DT, st.elapsed)
+        if (portal) {
+          const p = bodyPos(portal, st.elapsed)
+          dist = Math.min(dist, Math.hypot(p.x - st.ship.x, p.y - st.ship.y))
+        }
+      }
+      return { hit: true, steps: step, clearance: portal ? portal.r + SHIP_R - dist : MIN_CLEARANCE, lateralPx }
     }
     if (ev.some((e) => e.type === 'crash' || e.type === 'blackhole' || e.type === 'out' || e.type === 'timeout')) {
-      return { hit: false, steps: step, clearance: 0 }
+      return { hit: false, steps: step, clearance: 0, lateralPx }
     }
   }
-  return { hit: false, steps: maxSteps, clearance: 0 }
+  return { hit: false, steps: maxSteps, clearance: 0, lateralPx }
 }
 
 /** 供单测/证据复核：用与运行时相同的 stepFrame 复放一条给定弹道。 */
 export function simulateSolution(level: LevelConfig, angleDeg: number, power: number, maxSteps = 1200): SimResult {
   return simulateLaunch(level, angleDeg, power, maxSteps)
+}
+
+/**
+ * 直射必死校验：朝锚点→星门初始方向扫 0.05..1.0 全部力度。
+ * 任意力度能直射命中，则该布局被视作“可偷鸡”，必须换 seed。
+ */
+export function directShotBlocked(level: LevelConfig, opts?: { maxSteps?: number }): { blocked: boolean; directAngleDeg: number } {
+  const maxSteps = opts?.maxSteps ?? 1200
+  const directAngleDeg = directShotAngle(level)
+  for (let power = 0.05; power <= 1.0001; power += 0.05) {
+    const result = simulateLaunch(level, directAngleDeg, Number(power.toFixed(2)), maxSteps)
+    if (result.hit) return { blocked: false, directAngleDeg }
+  }
+  return { blocked: true, directAngleDeg }
 }
 
 /** 在角度 ×力度网格上搜索可解弹道；返回命中解、角度窗口与门体净空，失败返回 null。 */
@@ -352,14 +408,21 @@ export function solveLevel(level: LevelConfig, opts?: { maxSteps?: number; timeo
   const bodyCount = level.bodies.filter((b) => b.kind !== 'collect').length
   const candidates: { angleDeg: number; power: number; result: SimResult }[] = []
 
-  const angles = Array.from({ length: 21 }, (_, i) => -130 + i * 4)
-  const powers = Array.from({ length: 14 }, (_, i) => 0.35 + i * 0.05)
+  const direct = directShotBlocked(level, { maxSteps })
+  if (!direct.blocked) return null
+
+  // 绕障低速弧线常出现在 0.15..0.35；角度覆盖左右各 70°，避免漏掉绕侧解。
+  const angles = Array.from({ length: 35 }, (_, i) => -160 + i * 5)
+  const powers = Array.from({ length: 18 }, (_, i) => 0.15 + i * 0.05)
 
   for (const angleDeg of angles) {
     for (const power of powers) {
       if (opts?.timeoutMs && Date.now() - started > opts.timeoutMs) return null
       const result = simulateLaunch(level, angleDeg, power, maxSteps)
-      if (result.hit) candidates.push({ angleDeg, power, result })
+      const bendDeg = Math.abs(normalizeAngleDeg(angleDeg - direct.directAngleDeg))
+      if (result.hit && bendDeg >= REQUIRED_BEND_DEG && result.lateralPx >= MIN_BEND_LATERAL_PX) {
+        candidates.push({ angleDeg, power, result })
+      }
     }
   }
   if (!candidates.length) return null
@@ -369,10 +432,12 @@ export function solveLevel(level: LevelConfig, opts?: { maxSteps?: number; timeo
 
   // 局部细化：角度 ±4°、力度 ±0.08。
   for (let angle = best.angleDeg - 4; angle <= best.angleDeg + 4; angle += 1) {
-    for (let power = Math.max(0.35, best.power - 0.08); power <= Math.min(1, best.power + 0.08); power += 0.02) {
+    for (let power = Math.max(0.15, best.power - 0.08); power <= Math.min(1, best.power + 0.08); power += 0.02) {
       if (opts?.timeoutMs && Date.now() - started > opts.timeoutMs) break
       const result = simulateLaunch(level, angle, power, maxSteps)
-      if (result.hit && (result.clearance > best.result.clearance || (result.clearance === best.result.clearance && result.steps < best.result.steps))) {
+      const bendDeg = Math.abs(normalizeAngleDeg(angle - direct.directAngleDeg))
+      const acceptableBend = bendDeg >= REQUIRED_BEND_DEG && result.lateralPx >= MIN_BEND_LATERAL_PX
+      if (result.hit && acceptableBend && (result.clearance > best.result.clearance || (result.clearance === best.result.clearance && result.steps < best.result.steps))) {
         best = { angleDeg: angle, power, result }
       }
     }
@@ -396,7 +461,11 @@ export function solveLevel(level: LevelConfig, opts?: { maxSteps?: number; timeo
     angleWindowDeg,
     clearance: Math.round(best.result.clearance * 10) / 10,
     bodyCount,
-    portalKind: portal?.kind ?? 'portal'
+    portalKind: portal?.kind ?? 'portal',
+    directAngleDeg: Math.round(direct.directAngleDeg * 10) / 10,
+    bendDeg: Math.round(Math.abs(normalizeAngleDeg(best.angleDeg - direct.directAngleDeg)) * 10) / 10,
+    lateralPx: Math.round(best.result.lateralPx),
+    directShotBlocked: true
   }
 }
 
@@ -775,7 +844,8 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
     const key = `${state.level}|${Math.round(drag.x)}|${Math.round(drag.y)}|${power.toFixed(3)}|${Math.floor(state.elapsed)}`
     if (key === predictKey) return
     predictKey = key
-    predicted = power > 0.12 ? predictTrajectory(level, v, power) : []
+    // 极轻拖也有低速轨迹；不再用 power>0.12 截断，但零位移由 launch() 的 MIN_LAUNCH_DRAG_PX 取消。
+    predicted = v.len > MIN_LAUNCH_DRAG_PX ? predictTrajectory(level, v, power) : []
   }
 
   function burst(x: number, y: number, hue: number, count = 26): void {
@@ -852,13 +922,14 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
 
   function launch(): void {
     const v = aimVector(level.anchor, drag)
-    const power = powerFromPull(v.len)
-    if (power < 0.12) {
+    // 只有锚点附近零位移/几 px 内误触取消；任何有效轻拖都按对应小力度发射。
+    if (v.len < MIN_LAUNCH_DRAG_PX) {
       dragging = false
       predicted = []
       predictKey = ''
       return
     }
+    const power = powerFromPull(v.len)
     if (level.shots >= 0 && state.shotsLeft <= 0) return
     audio.ensure()
     state.ship.vx = v.nx * power * V_MAX
@@ -1135,11 +1206,29 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
       ctx.strokeStyle = 'rgba(255,120,140,0.85)'
       ctx.lineWidth = 3
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(dp.x, dp.y); ctx.stroke()
-      // 预测虚线
-      ctx.fillStyle = 'rgba(120,220,255,0.7)'
-      for (const pt of predicted) {
+      // 预测虚线：按进度淡出；末端在出界方向补小箭头，提示轨迹延伸到世界边界。
+      for (let i = 0; i < predicted.length; i += 1) {
+        const pt = predicted[i]!
         const sp = screen(pt.x, pt.y)
+        ctx.globalAlpha = 0.75 * (1 - i / Math.max(1, predicted.length))
         ctx.beginPath(); ctx.arc(sp.x, sp.y, 3, 0, Math.PI * 2); ctx.fill()
+      }
+      ctx.globalAlpha = 1
+      if (predicted.length > 2) {
+        const prev = predicted[predicted.length - 2]!
+        const last = predicted[predicted.length - 1]!
+        const a = screen(prev.x, prev.y)
+        const b = screen(last.x, last.y)
+        const angle = Math.atan2(b.y - a.y, b.x - a.x)
+        ctx.strokeStyle = 'rgba(120,220,255,0.75)'
+        ctx.fillStyle = 'rgba(120,220,255,0.75)'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(b.x - Math.cos(angle - 0.45) * 9, b.y - Math.sin(angle - 0.45) * 9)
+        ctx.lineTo(b.x, b.y)
+        ctx.lineTo(b.x - Math.cos(angle + 0.45) * 9, b.y - Math.sin(angle + 0.45) * 9)
+        ctx.stroke()
+        ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, Math.PI * 2); ctx.fill()
       }
       // 力度条（贴在锚点上方，避免被底部安全区/橡皮筋遮挡）
       const v = aimVector(level.anchor, drag)
@@ -1286,7 +1375,7 @@ export function mount(canvas: HTMLCanvasElement, opts: MountOptions): SlingHandl
     }
 
     if (state.phase === 'intro') {
-      panel('挽星弓', ['按住锚点向后拖拽，松手发射', '借恒星引力飞向星门'], [
+      panel('挽星弓', ['按住锚点向后拖拽，松手发射', '挡路天体封死直线，看预测虚线绕障借力'], [
         { id: 'start', label: '开始游戏' },
         { id: 'levels', label: '选择关卡' }
       ])
