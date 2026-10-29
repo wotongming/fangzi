@@ -95,6 +95,16 @@ const NEON: GameDef[] = [
     difficulties: ['classic'],
     kind: 'gpu',
     loader: () => import('./gpu-games/gravity-sling/gravity-sling.vue')
+  },
+  {
+    id: 'starvein',
+    name: '星脉',
+    icon: '🕸️',
+    desc: '单指拖动画光脉点亮星网，卡点脉冲 PERFECT 合奏音符，赶在黑暗潮汐之前收线',
+    pro: false,
+    difficulties: ['classic'],
+    kind: 'gpu',
+    loader: () => import('./gpu-games/starvein/starvein.vue')
   }
 ]
 
