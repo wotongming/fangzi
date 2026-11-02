@@ -3,7 +3,7 @@
  * 租赁证据链（rent-evidence）——入住交接水印拍照 / 报修工单归责 / 台账 / 证据包 PDF。
  * 全程浏览器本地处理，照片压缩为 JPEG 存 IndexedDB（fz-rent-evidence-v1），不上传。
  */
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useToolBilling } from '@/composables/useToolBilling'
 import { useSeo } from '@/composables/useSeo'
 import {
@@ -13,6 +13,7 @@ import {
   classifyResponsibility,
   formatStamp,
   genId,
+  groupPhotosForPdf,
   summarizeEvidence,
   type LedgerEntry,
   type LedgerKind,
@@ -98,13 +99,30 @@ async function removePhoto(p: PhotoRecord) {
 // ---------- 报修工单 ----------
 const ticketForm = reactive({ title: '', description: '', cost: '' })
 const ticketPhotos = ref<File[]>([])
+const ticketPreviews = ref<string[]>([])
 const ticketBusy = ref(false)
+
+function revokePreviews() {
+  for (const u of ticketPreviews.value) URL.revokeObjectURL(u)
+  ticketPreviews.value = []
+}
 
 function onTicketFiles(e: Event) {
   const input = e.target as HTMLInputElement
-  ticketPhotos.value = input.files ? Array.from(input.files) : []
+  const files = input.files ? Array.from(input.files) : []
   input.value = ''
+  revokePreviews()
+  ticketPhotos.value = files
+  ticketPreviews.value = files.map((f) => URL.createObjectURL(f))
 }
+
+function removeTicketPreview(i: number) {
+  URL.revokeObjectURL(ticketPreviews.value[i]!)
+  ticketPreviews.value.splice(i, 1)
+  ticketPhotos.value.splice(i, 1)
+}
+
+onUnmounted(revokePreviews)
 
 async function submitTicket() {
   if (!ticketForm.title.trim()) {
@@ -136,6 +154,7 @@ async function submitTicket() {
     ticketForm.description = ''
     ticketForm.cost = ''
     ticketPhotos.value = []
+    revokePreviews()
     await refresh()
     say('工单已记录，责任初判：' + RESP_LABEL[responsibility])
   } finally {
@@ -177,7 +196,8 @@ async function exportPdf() {
   exporting.value = true
   try {
     const rows = summarizeEvidence(photos.value, tickets.value, ledger.value)
-    const blob = await buildEvidencePdf(rows)
+    const sections = groupPhotosForPdf(photos.value, tickets.value)
+    const blob = await buildEvidencePdf(rows, sections)
     downloadBlob(blob, `租赁证据包_${formatStamp(new Date().toISOString()).replace(/[-: ]/g, '')}.pdf`)
     say('证据包 PDF 已导出（照片原件在应用内相册）')
   } catch (err) {
@@ -250,7 +270,12 @@ const repairPhotosOf = (t: RepairTicket) => photos.value.filter((p) => t.photoId
           <input v-model="ticketForm.cost" type="number" placeholder="维修费用 ¥" />
           <label class="filebtn small">📷 现场照片（可多选）<input type="file" accept="image/*" multiple hidden @change="onTicketFiles" /></label>
         </div>
-        <small v-if="ticketPhotos.length">已选 {{ ticketPhotos.length }} 张</small>
+        <div v-if="ticketPreviews.length" class="previews">
+          <div v-for="(u, i) in ticketPreviews" :key="i" class="pv">
+            <img :src="u" alt="" />
+            <button class="pvdel" title="移除" @click="removeTicketPreview(i)">×</button>
+          </div>
+        </div>
         <button class="primary" :disabled="ticketBusy" @click="submitTicket">{{ ticketBusy ? '保存中…' : '保存工单' }}</button>
       </div>
       <div class="list">
@@ -340,6 +365,10 @@ figcaption small { color: #6b7280; }
 .tag.unknown { background: #f3f4f6; color: #4b5563; }
 .thumbrow { display: flex; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
 .thumbrow img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; }
+.previews { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.pv { position: relative; }
+.pv img { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; border: 1px solid #d1d5db; display: block; }
+.pvdel { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: #111827; color: #fff; font-size: 13px; line-height: 1; cursor: pointer; }
 .empty { color: #9ca3af; text-align: center; padding: 20px 0; }
 .toast { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); background: #111827; color: #fff; padding: 8px 16px; border-radius: 999px; font-size: 13px; z-index: 50; }
 .stat { padding-left: 18px; line-height: 1.9; color: #374151; }

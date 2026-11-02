@@ -17,23 +17,29 @@
 - E2E reload 持久化断言首版失败：reload 后 Tab 复位到「交接照片」，断言「押金 ¥3000」文本当然找不到——断言前先点台账/工单 Tab 再查。
 - Playwright 启动需显式 `executablePath: CHROMIUM`（来自 `scripts/_gpu-ctx.mjs`），否则默认找错 headless shell 路径。
 
+## 迭代修复（2026-11-02，基于 dc8db90）
+- **Bug1 工单照片不预览**：表单内对每个已选 File 用 `URL.createObjectURL` 渲染 84px 缩略图（`.previews .pv`），右上角「×」单张移除并 `revokeObjectURL`；换选/提交成功/组件卸载统一 revoke 防泄漏；保存后卡片缩略图不变。
+- **Bug2 PDF 缺照片**：`buildEvidencePdf(rows, photoSections)` 文字页之后追加照片页——`groupPhotosForPdf`（新增纯函数、无 DOM、4 例单测）按入住/退租/报修工单分组，每张照片 A4 等比 contain 绘制 + 系统字体中文图注，canvas→JPEG→embedJpg，不内嵌字体、零新依赖。
+
 ## 验证覆盖
-- 单测：`test/rent-evidence.test.ts` 9 例（责任初判三类、时间戳补零/非法输入、证据汇总四段/金额换算/空数据、交接清单预置项齐全）。
-- 全量 `npm test`：**543 通过 / 0 失败**（基线 534 + 9）。
+- 单测：`test/rent-evidence.test.ts` 13 例（原 9 例 + PDF 照片分组 4 例：入住/退租分组与图注时间戳、报修照按工单归组、未关联组、空照片零分组）。
+- 全量 `npm test`：**547 通过 / 0 失败**（基线 543 + 4）。
 - `npx vue-tsc --noEmit`：**0 错误**。
-- `npm run verify:tools`：**36**（新增独立顶层工具，符合预期 35→36）。
+- `npm run verify:tools`：**36**（本轮增量未动工具数）。
 - `npm run build`：成功。
-- Playwright 三视口（1280×860 / 834×1112 / 375×812 移动 UA）：台账记账 ¥3000 → 工单责任初判 landlord → 交接照入库 figures=2 → 证据包 PDF download 成功（`租赁证据包_*.pdf`）；reload 后台账/工单跨刷新保留；零横向溢出、无 pageerror。
+- Playwright 三视口（1280×860 / 834×1112 / 375×812 移动 UA）：台账 ¥3000 → 工单表单选 2 张图出现 2 个可点×预览（点×后剩 1）→ 保存后卡片缩略图仍在（1）→ 交接照入库 → PDF download 后用 pdf-lib 读回 **pages=3**（1 文字页 + 2 照片页，≥3 断言通过）；reload 后台账/工单/照片跨刷新保留；零横向溢出、无 pageerror、除 blob: 同源预览 URL 外零外链。
 
 ### 截图有效性
 | 文件 | 视口 | 像素 | 大小（字节） | 结论 |
 | --- | --- | ---: | ---: | --- |
-| `shots/pc-rent-evidence.png` | 1280×860 | 1280×860 | 86,796 | 交接照列表+水印条可见+toast，通过 |
-| `shots/tablet-rent-evidence.png` | 834×1112 | 834×1112 | 75,846 | 竖屏自适应，通过 |
-| `shots/mobile-rent-evidence.png` | 375×812 | 375×812 | 68,600 | iPhone UA 竖屏无溢出，通过 |
+| `shots/pc-rent-evidence.png` | 1280×860 | 1280×860 | 86,784 | 交接照列表+水印条可见，通过 |
+| `shots/pc-ticket-form.png` | 1280×860 | 1280×860 | 52,739 | 表单内 2 张缩略图+×按钮可见，通过 |
+| `shots/pdf-photo-page.png` | PDF 阅读器 | 900×1200 | 120,737 | PDF 3 页缩略图栏可见照片页、「照片证据一」标题，通过 |
+| `shots/tablet-rent-evidence.png` | 834×1112 | 834×1112 | 75,881 | 竖屏自适应，通过 |
+| `shots/mobile-rent-evidence.png` | 375×812 | 375×812 | 68,595 | iPhone UA 竖屏无溢出，通过 |
 
 ### EdgeOne 限额
-- dist **184,383,616 B ≈ 175.85 MiB**（< 5GiB）
+- dist **184,388,740 B ≈ 175.85 MiB**（< 5GiB）
 - 文件数 **184**（< 20000）
 - 最大单文件仍为既有 ONNX **24,010,842 B ≈ 22.90 MiB**（< 25MiB，非本工具引入）。
 

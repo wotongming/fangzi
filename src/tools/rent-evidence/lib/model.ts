@@ -130,3 +130,48 @@ export function summarizeEvidence(
 export function genId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 }
+
+/** PDF 照片页分组（纯函数，无 DOM，可单测）。 */
+export interface PhotoSection {
+  /** 分组标题（中文） */
+  title: string
+  items: Array<{ photo: PhotoRecord; caption: string }>
+}
+
+/**
+ * 按入住交接 / 退租复核 / 报修工单（按工单标题归组）分组水印照片，
+ * 生成 PDF 照片页所需的标题+图注序列。
+ */
+export function groupPhotosForPdf(photos: PhotoRecord[], tickets: RepairTicket[]): PhotoSection[] {
+  const caption = (p: PhotoRecord) => `[${formatStamp(p.at)}] ${p.item}${p.note ? '｜' + p.note : ''}`
+  const sections: PhotoSection[] = []
+  const moves = photos.filter((p) => p.kind === 'move-in').sort((a, b) => a.at.localeCompare(b.at))
+  const outs = photos.filter((p) => p.kind === 'move-out').sort((a, b) => a.at.localeCompare(b.at))
+  if (moves.length)
+    sections.push({ title: `照片证据一、入住交接照（共 ${moves.length} 张）`, items: moves.map((photo) => ({ photo, caption: caption(photo) })) })
+  if (outs.length)
+    sections.push({ title: `照片证据二、退租复核照（共 ${outs.length} 张）`, items: outs.map((photo) => ({ photo, caption: caption(photo) })) })
+  const byTicket = new Map<string, PhotoRecord[]>()
+  const orphan: PhotoRecord[] = []
+  for (const p of photos.filter((x) => x.kind === 'repair')) {
+    const t = tickets.find((t) => t.photoIds.includes(p.id))
+    if (t) {
+      const arr = byTicket.get(t.id) ?? []
+      arr.push(p)
+      byTicket.set(t.id, arr)
+    } else {
+      orphan.push(p)
+    }
+  }
+  for (const t of tickets) {
+    const arr = byTicket.get(t.id)
+    if (!arr || !arr.length) continue
+    sections.push({
+      title: `照片证据三、报修工单「${t.title}」（${formatStamp(t.at)}，${RESP_LABEL[t.responsibility]}）`,
+      items: arr.sort((a, b) => a.at.localeCompare(b.at)).map((photo) => ({ photo, caption: caption(photo) }))
+    })
+  }
+  if (orphan.length)
+    sections.push({ title: '照片证据四、未关联工单的报修现场照', items: orphan.map((photo) => ({ photo, caption: caption(photo) })) })
+  return sections
+}

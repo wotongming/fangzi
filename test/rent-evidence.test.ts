@@ -4,6 +4,7 @@ import {
   CHECKLIST_ITEMS,
   classifyResponsibility,
   formatStamp,
+  groupPhotosForPdf,
   summarizeEvidence,
   type LedgerEntry,
   type PhotoRecord,
@@ -70,5 +71,40 @@ describe('rent-evidence 交接清单', () => {
     for (const need of ['墙面', '地板', '空调', '水表', '电表', '钥匙']) {
       assert.ok(s.includes(need), '缺少 ' + need)
     }
+  })
+})
+
+describe('rent-evidence PDF 照片分组', () => {
+  const mk = (id: string, kind: 'move-in' | 'move-out' | 'repair', note = '') =>
+    ({ id, at: '2026-11-02T03:05:00Z', kind, item: '客厅墙面', note, dataUrl: '' }) as PhotoRecord
+
+  it('入住/退租各成一组且图注含时间戳', () => {
+    const sections = groupPhotosForPdf([mk('a', 'move-in'), mk('b', 'move-out')], [])
+    assert.equal(sections.length, 2)
+    assert.match(sections[0]!.title, /入住交接照/)
+    assert.match(sections[1]!.title, /退租复核照/)
+    assert.match(sections[0]!.items[0]!.caption, /2026-11-02 11:05/)
+  })
+
+  it('报修照按工单标题归组', () => {
+    const photos = [mk('r1', 'repair'), mk('r2', 'repair'), mk('r3', 'repair')]
+    const tickets: RepairTicket[] = [
+      { id: 't1', at: '2026-11-02T03:05:00Z', title: '厨房漏水', description: '', responsibility: 'landlord', costCents: 0, photoIds: ['r1', 'r2'] },
+      { id: 't2', at: '2026-11-02T03:05:00Z', title: '空调异响', description: '', responsibility: 'unknown', costCents: 0, photoIds: ['r3'] }
+    ]
+    const sections = groupPhotosForPdf(photos, tickets)
+    const repairSecs = sections.filter((s) => s.title.includes('报修工单'))
+    assert.equal(repairSecs.length, 2)
+    assert.match(repairSecs[0]!.title, /厨房漏水/)
+    assert.match(repairSecs[1]!.title, /空调异响/)
+  })
+
+  it('无工单关联的报修照归入未关联组', () => {
+    const sections = groupPhotosForPdf([mk('x', 'repair')], [])
+    assert.ok(sections.some((s) => s.title.includes('未关联工单')))
+  })
+
+  it('空照片不产出任何分组', () => {
+    assert.equal(groupPhotosForPdf([], []).length, 0)
   })
 })
