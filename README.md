@@ -233,6 +233,15 @@ npm run new:tool -- <kebab-id> <web|plugin> "工具名称"  # 生成新工具骨
 - **文档**：`src/tools/receipt-vault/docs/`（guide/postmortem、architect/dev/ops、PC/手机真实界面截图）。
 - **更新时间**：2026-10-21 ｜ 状态：stable ｜ 版本：1.0.0
 
+### 17. 租赁证据链（rent-evidence）
+
+- **简介**：小房东/直租租客的租赁过程留痕工具：入住交接拍带时间戳水印的照片（拍摄时刻烧入像素）、租期报修工单留痕并按关键词初判自然老化 vs 人为损坏、押金/租金/维修台账，退租同位置对比，争议时一键导出证据包 PDF。照片与数据全程本机、不上传。
+- **使用场景**：入住按墙面/地板/家电逐项拍照留基准；漏水/损坏报修照片+文字留痕；退租对比；押金维修翻聊天记录对不上账。
+- **技术**：Canvas 拍照压缩（最长边 960px）+ 时间戳水印；独立 IndexedDB 库 `fz-rent-evidence-v1`（photos/tickets/ledger 三表）；证据 PDF 走「canvas 中文报告页→JPEG→pdf-lib」（复用 payment-chaser 模式，免内嵌中文字体）；责任初判纯函数可单测；零新增运行时依赖。
+- **计费**：Freemium（交接水印拍照/工单/台账/证据 PDF 免费；多套房分组管理为 Pro）。
+- **文档**：`src/tools/rent-evidence/docs/`（guide/postmortem、architect/dev/ops、PC/平板/手机真实界面截图）。
+- **更新时间**：2026-11-02 ｜ 状态：stable ｜ 版本：1.0.0
+
 ---
 
 ## 如何新增一个工具（可扩展框架）
