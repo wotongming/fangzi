@@ -11,28 +11,43 @@
       <label>参考上限 <input type="number" step="0.01" v-model.number="form.refHigh" placeholder="可空" /></label>
     </div>
     <div class="row">
-      <button class="primary" @click="onAdd">＋ 录入本年测量</button>
+      <button class="primary" @click="onSave">{{ form.editId ? '✓ 保存修改' : '＋ 录入本年测量' }}</button>
+      <button v-if="form.editId" @click="cancelEdit">取消编辑</button>
       <span v-if="msg" class="msg">{{ msg }}</span>
     </div>
 
-    <div v-for="item in chartList" :key="item.name" class="card">
-      <div class="card-head">
+    <div class="row toolbar">
+      <input class="search" v-model="keyword" placeholder="🔍 搜索指标名…" />
+      <button @click="expandAll">全部展开</button>
+      <button @click="collapseAll">全部收起</button>
+    </div>
+
+    <div v-for="item in filteredList" :key="item.name" class="card">
+      <div class="card-head" @click="toggle(item.name)" style="cursor:pointer">
         <strong>{{ item.name }}</strong>
         <span class="unit">单位：{{ item.unit }}</span>
         <span class="badge" :class="item.status">{{ statusLabel(item.status) }}</span>
+        <span class="arrow">{{ collapsed.has(item.name) ? '▸' : '▾' }}</span>
       </div>
-      <p class="note">{{ item.note }}</p>
-      <svg viewBox="0 0 300 120" class="chart">
-        <!-- 参考上限阴影带 -->
-        <line v-if="item.refHigh" x1="30" :y1="yOf(item.refHigh)" x2="295" :y2="yOf(item.refHigh)" stroke="#e57373" stroke-dasharray="4 3" />
-        <polyline :points="item.points" fill="none" stroke="#4a90d9" stroke-width="2" />
-        <circle v-for="(p, i) in item.dots" :key="i" :cx="p.x" :cy="p.y" r="3.5" :fill="p.color" />
-        <text v-for="(p, i) in item.dots" :key="'t'+i" :x="p.x" :y="p.y - 7" font-size="9" text-anchor="middle" fill="#666">{{ p.v }}</text>
-        <text v-for="(p, i) in item.dots" :key="'y'+i" :x="p.x" :y="115" font-size="9" text-anchor="middle" fill="#999">{{ p.year }}</text>
-      </svg>
-      <div class="row small">
-        <button @click="onDelete(item)">🗑 删除该指标全部记录</button>
-      </div>
+      <template v-if="!collapsed.has(item.name)">
+        <p class="note">{{ item.note }}</p>
+        <svg viewBox="0 0 300 130" class="chart" preserveAspectRatio="xMidYMid meet">
+          <line v-if="item.refHigh" x1="36" :y1="yOf(item.refHigh, item)" x2="292" :y2="yOf(item.refHigh, item)" stroke="#e57373" stroke-dasharray="4 3" />
+          <polyline :points="item.points" fill="none" stroke="#4a90d9" stroke-width="2" />
+          <circle v-for="(p, i) in item.dots" :key="i" :cx="p.x" :cy="p.y" r="3.5" :fill="p.color" />
+          <text v-for="(p, i) in item.dots" :key="'t'+i" :x="p.x" :y="Math.max(8, p.y - 6)" font-size="8" text-anchor="middle" fill="#666">{{ p.v }}</text>
+          <text v-for="(p, i) in item.dots" :key="'y'+i" :x="p.x" :y="122" font-size="8" text-anchor="middle" fill="#999">{{ p.year }}</text>
+        </svg>
+        <div class="recs">
+          <div v-for="r in item.records" :key="r.id" class="rec">
+            <span>{{ r.year }}：{{ r.value }} {{ r.unit }}<template v-if="r.refHigh != null">（上限 {{ r.refHigh }}）</template></span>
+            <span class="rec-op">
+              <button @click="onEdit(r)">编辑</button>
+              <button @click="onDeleteRecord(r)">删</button>
+            </span>
+          </div>
+        </div>
+      </template>
     </div>
 
     <div class="card" v-if="actionList.length">
@@ -45,7 +60,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, reactive, ref, onMounted } from 'vue'
+import { defineComponent, reactive, ref, computed, onMounted } from 'vue'
 import { manifest } from './manifest'
 import { allRecords, saveRecord, deleteRecord } from './lib/store'
 import { buildActionList, genId, groupByName, trendStatus, type MetricRecord, type TrendStatus } from './lib/model'
@@ -58,6 +73,8 @@ interface ChartItem {
   status: TrendStatus
   note: string
   points: string
+  maxV: number
+  records: MetricRecord[]
   dots: Array<{ x: number; y: number; v: number; year: number; color: string }>
 }
 
@@ -66,9 +83,11 @@ export default defineComponent({
   setup() {
     const records = ref<MetricRecord[]>([])
     const msg = ref('')
-    const form = reactive({ year: new Date().getFullYear(), name: '', value: NaN, unit: '', refHigh: NaN })
+    const form = reactive({ editId: '' as string, year: new Date().getFullYear(), name: '', value: NaN, unit: '', refHigh: NaN })
     const chartList = ref<ChartItem[]>([])
     const actionList = ref<ReturnType<typeof buildActionList>>([])
+    const keyword = ref('')
+    const collapsed = ref(new Set<string>())
 
     const rebuild = () => {
       const groups = groupByName(records.value)
@@ -76,12 +95,16 @@ export default defineComponent({
       for (const [name, arr] of groups) {
         const { status, note } = trendStatus(name, arr)
         const maxV = Math.max(...arr.map(r => r.value), ...arr.map(r => r.refHigh ?? 0), 1)
-        const xs = arr.map((_, i) => 30 + (i * 265) / Math.max(arr.length - 1, 1))
+        const xs = arr.map((_, i) => 36 + (i * 256) / Math.max(arr.length - 1, 1))
+        const dots = arr.map((r, i) => ({ x: xs[i]!, y: 100 - (r.value / maxV) * 80, v: r.value, year: r.year, color: status === 'abnormal' ? '#e57373' : '#4a90d9' }))
         list.push({
-          name, unit: arr[0]!.unit, refHigh: arr[arr.length - 1]!.refHigh ?? null, status, note,
-          points: arr.map((r, i) => `${xs[i]},${100 - (r.value / maxV) * 90}`).join(' '),
-          dots: arr.map((r, i) => ({ x: xs[i]!, y: 100 - (r.value / maxV) * 90, v: r.value, year: r.year, color: status === 'abnormal' ? '#e57373' : '#4a90d9' }))
+          name, unit: arr[0]!.unit, refHigh: arr[arr.length - 1]!.refHigh ?? null, status, note, maxV, records: arr,
+          points: dots.map(d => `${d.x},${d.y}`).join(' '),
+          dots
         })
+        // 有预警默认展开，平稳默认折叠
+        if (status === 'ok') collapsed.value.add(name)
+        else collapsed.value.delete(name)
       }
       chartList.value = list
       actionList.value = buildActionList(records.value)
@@ -90,24 +113,49 @@ export default defineComponent({
     const load = async () => { records.value = await allRecords(); rebuild() }
     onMounted(load)
 
-    const onAdd = async () => {
+    const onSave = async () => {
       if (!form.name || Number.isNaN(form.value)) { msg.value = '指标名和数值必填'; return }
-      await saveRecord({ id: genId(), year: form.year, name: form.name.trim(), value: form.value, unit: form.unit.trim(), refLow: null, refHigh: Number.isNaN(form.refHigh) ? null : form.refHigh })
-      msg.value = '已录入 ✓'
+      const id = form.editId || genId()
+      await saveRecord({ id, year: form.year, name: form.name.trim(), value: form.value, unit: form.unit.trim(), refLow: null, refHigh: Number.isNaN(form.refHigh) ? null : form.refHigh })
+      msg.value = form.editId ? '已更新 ✓' : '已录入 ✓'
+      form.editId = ''
+      await load()
+    }
+    const cancelEdit = () => { form.editId = ''; msg.value = '' }
+
+    const onEdit = (r: MetricRecord) => {
+      form.editId = r.id
+      form.year = r.year
+      form.name = r.name
+      form.value = r.value
+      form.unit = r.unit
+      form.refHigh = r.refHigh ?? NaN
+      msg.value = `正在编辑 ${r.name} ${r.year} 年…`
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+
+    const onDeleteRecord = async (r: MetricRecord) => {
+      if (!confirm(`删除 ${r.name} ${r.year} 年的记录（${r.value} ${r.unit}）？`)) return
+      await deleteRecord(r.id)
+      msg.value = `已删除 ${r.name} ${r.year}`
       await load()
     }
 
-    const yOf = (v: number) => {
-      const maxV = Math.max(...records.value.flatMap(r => [r.value, ...(r.refHigh != null ? [r.refHigh] : [])]), 1)
-      return 100 - (v / maxV) * 90
+    const toggle = (name: string) => {
+      const s = new Set(collapsed.value)
+      if (s.has(name)) s.delete(name); else s.add(name)
+      collapsed.value = s
     }
+    const expandAll = () => { collapsed.value = new Set() }
+    const collapseAll = () => { collapsed.value = new Set(chartList.value.map(c => c.name)) }
+
+    const filteredList = computed(() =>
+      chartList.value.filter(c => !keyword.value.trim() || c.name.includes(keyword.value.trim()))
+    )
+
+    const yOf = (v: number, item: ChartItem) => 100 - (v / item.maxV) * 80
 
     const statusLabel = (s: TrendStatus) => s === 'abnormal' ? '已超限' : s === 'climb' ? '缓慢爬升' : '平稳'
-    const onDelete = async (item: ChartItem) => {
-      for (const r of records.value.filter(r => r.name === item.name)) await deleteRecord(r.id)
-      msg.value = `已删除 ${item.name}`
-      await load(); rebuild()
-    }
 
     const exportPdf = async () => {
       const doc = document.createElement('canvas')
@@ -140,7 +188,7 @@ export default defineComponent({
       setTimeout(() => URL.revokeObjectURL(url), 4000)
     }
 
-    return { manifest, records, msg, form, chartList, actionList, onAdd, onDelete, exportPdf, statusLabel, yOf }
+    return { manifest, records, msg, form, chartList, actionList, keyword, collapsed, filteredList, onSave, cancelEdit, onEdit, onDeleteRecord, toggle, expandAll, collapseAll, exportPdf, statusLabel, yOf }
   }
 })
 </script>
@@ -150,18 +198,25 @@ export default defineComponent({
 .tag { color: #666; overflow-wrap: break-word; }
 .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 10px 0; }
 .row.small { margin: 6px 0 0; }
+.row.toolbar { align-items: center; }
+.search { flex: 1 1 160px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; }
 .row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #666; flex: 1 1 140px; max-width: 100%; }
 .row input { padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; width: 100%; box-sizing: border-box; }
 .primary { background: #2563eb; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+button { padding: 4px 10px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; }
 .msg { color: #16a34a; }
 .card { border: 1px solid #eee; border-radius: 10px; padding: 12px; margin: 12px 0; }
 .card-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.arrow { margin-left: auto; color: #999; }
 .unit { color: #999; font-size: 12px; }
 .badge { padding: 2px 8px; border-radius: 99px; font-size: 12px; }
 .badge.ok { background: #dcfce7; color: #166534; }
 .badge.climb { background: #ffedd5; color: #c2410c; }
 .badge.abnormal { background: #fee2e2; color: #991b1b; }
 .note { color: #555; font-size: 13px; margin: 6px 0; }
-.chart { width: 100%; height: 120px; }
+.chart { width: 100%; height: 130px; }
+.recs { margin-top: 6px; }
+.rec { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-top: 1px dashed #eee; font-size: 13px; }
+.rec-op { display: flex; gap: 6px; }
 .empty { color: #999; text-align: center; margin: 24px 0; }
 </style>

@@ -58,3 +58,24 @@ test('groupByName: 按指标名分组并按年排序', () => {
   assert.equal(g.size, 1)
   assert.deepEqual([...g.get('尿酸')!].map(r => r.year), [2023, 2024])
 })
+
+test('单条编辑后趋势重算：climb 改平 → ok', () => {
+  const base: MetricRecord[] = [
+    { id: '1', year: 2022, name: '血糖', value: 5.0, unit: '', refHigh: 6.1 },
+    { id: '2', year: 2023, name: '血糖', value: 5.5, unit: '', refHigh: 6.1 },
+    { id: '3', year: 2024, name: '血糖', value: 6.0, unit: '', refHigh: 6.1 }
+  ]
+  assert.equal(trendStatus('血糖', base).status, 'climb')
+  const edited = base.map(r => r.id === '3' ? { ...r, value: 5.2 } : r)
+  assert.equal(trendStatus('血糖', edited).status, 'ok')
+  assert.equal(buildActionList(edited).length, 0)
+})
+
+test('climb 三条件门槛缺一不可：中间回落不连续 → 不预警', () => {
+  const noRise: MetricRecord[] = [
+    { id: '1', year: 2022, name: '血糖', value: 5.0, unit: '', refHigh: 6.1 },
+    { id: '2', year: 2023, name: '血糖', value: 4.8, unit: '', refHigh: 6.1 },
+    { id: '3', year: 2024, name: '血糖', value: 6.0, unit: '', refHigh: 6.1 }
+  ]
+  assert.equal(trendStatus('血糖', noRise).status, 'ok')
+})

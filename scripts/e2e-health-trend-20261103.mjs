@@ -57,6 +57,28 @@ async function mainChain(page) {
   const charts = await page.locator('.card').count()
   log('cards=', charts)
   if (charts < 2) fail.push(`cards=${charts}`)
+
+  // 需求3：搜索过滤
+  await page.locator('.search').fill('血糖')
+  await page.waitForTimeout(300)
+  const afterSearch = await page.locator('svg.chart').count()
+  if (afterSearch !== 1) fail.push(`search filter charts=${afterSearch}, expect 1`)
+  log('search filter ok: 血糖 →', afterSearch, 'card')
+  await page.locator('.search').fill('')
+
+  // 需求2：单条编辑（编辑 2024 血糖值 → 6.1 仍 climb，验证保存）
+  await page.locator('.rec-op button', { hasText: '编辑' }).first().click()
+  await page.waitForFunction(() => document.body.innerText.includes('正在编辑'), { timeout: 3000 })
+  await page.locator('.rw input[type=number]').nth(1).fill('5.8')
+  await page.getByRole('button', { name: '✓ 保存修改' }).click()
+  await page.waitForFunction(() => document.body.innerText.includes('已更新'), { timeout: 5000 })
+  log('single record edit ok')
+
+  // 需求2：单条删除（dialog 自动确认）
+  page.once('dialog', d => d.accept())
+  await page.locator('.rec-op button', { hasText: '删' }).first().click()
+  await page.waitForFunction(() => document.body.innerText.includes('已删除'), { timeout: 5000 })
+  log('single record delete ok')
 }
 
 async function runViewport(browser, name, viewport, mobile = false) {
