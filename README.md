@@ -242,6 +242,14 @@ npm run new:tool -- <kebab-id> <web|plugin> "工具名称"  # 生成新工具骨
 - **文档**：`src/tools/rent-evidence/docs/`（guide/postmortem、architect/dev/ops、PC/平板/手机真实界面截图）。
 - **更新时间**：2026-11-02 ｜ 状态：stable ｜ 版本：1.0.0
 
+### 18. 体检趋势（health-trend）
+
+- **简介**：历年体检指标手动录入，跨年 SVG 趋势曲线；只在连续缓慢爬升接近上限或已超限时预警，自动生成复查行动清单并导出 PDF，数据本机 IndexedDB 不上传。
+- **技术**：纯函数 trendStatus（ok/climb/abnormal）可单测；独立 IndexedDB 库 `fz-health-trend-v1`；手写 SVG 折线图零图表库；复查 PDF 走 canvas→JPEG→pdf-lib；零新增运行时依赖。
+- **计费**：Freemium（录入/趋势/预警免费；PDF 导出、多人体检档案为 Pro）。
+- **文档**：`src/tools/health-trend/docs/`（guide/postmortem、三视口真实截图）。
+- **更新时间**：2026-11-03 ｜ 状态：stable ｜ 版本：1.0.0
+
 ---
 
 ## 如何新增一个工具（可扩展框架）
